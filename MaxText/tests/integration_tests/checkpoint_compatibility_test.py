@@ -37,7 +37,7 @@ def run_checkpoint_compatibility(attention_type):
       attention_type,
   ]
 
-  subprocess.run(command, check=True, cwd="..")
+  subprocess.run(command, check=True, cwd=os.path.dirname(PKG_DIR))
 
 
 @pytest.mark.integration_test

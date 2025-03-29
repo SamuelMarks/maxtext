@@ -37,6 +37,7 @@ class AotHloIdenticalTest(unittest.TestCase):
           stdout=sys.stdout,  # Stream to stdout
           stderr=sys.stdout,  # Stream to stdout
           text=True,  # Decode output and error as text
+          cwd=os.path.dirname(PKG_DIR)
       )
       return result
     except subprocess.CalledProcessError as e:

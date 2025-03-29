@@ -15,6 +15,8 @@
  """
 from tempfile import gettempdir
 
+from MaxText.globals import PKG_DIR
+
 # pylint: disable=consider-using-with
 """ Script to run a command in a multislice/multihost environment
 
@@ -193,7 +195,7 @@ def scps(slices, run_name_dir, zip_name):
   os.makedirs(run_name_dir, exist_ok=True)
   zip_path = os.path.join(run_name_dir, zip_name)
   command = ["tar","--exclude=tmp", "-czf", zip_path, "./"]
-  subprocess.run(command, check=True)
+  subprocess.run(command, check=True, cwd=args.SCRIPT_DIR)
 
   # Move zip file to each tpuvm worker
   commands = []
@@ -284,7 +286,8 @@ def run_commands(commands, id_to_print, jobname, worker_list, is_shell=False, ou
     else:
       output_log = subprocess.DEVNULL
 
-    children.append(subprocess.Popen(command, stdout=output_log, stderr=output_log, shell=is_shell))
+    children.append(subprocess.Popen(command, stdout=output_log, stderr=output_log, shell=is_shell,
+      cwd=os.path.dirname(PKG_DIR)))
 
   while True:
     returncodes = [child.poll() for child in children]

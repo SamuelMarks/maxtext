@@ -40,7 +40,7 @@ def run_checkpointing(attention_type):
       "False",  # async_checkpointing"
   ]
 
-  subprocess.run(command, check=True, cwd="..")
+  subprocess.run(command, check=True, cwd=os.path.dirname(PKG_DIR))
 
 
 @pytest.mark.integration_test

@@ -26,7 +26,7 @@ from MaxText.globals import PKG_DIR
 def test_maxtext_with_sft_in_trl():
   command = ["gsutil", "cp", "-r", "gs://maxtext-dataset/hf/llama3.1-tokenizer",
              os.path.join(os.path.dirname(PKG_DIR), "assets", "")]
-  exit_code = subprocess.call(command)
+  exit_code = subprocess.call(command, cwd=os.path.dirname(PKG_DIR))
   if exit_code != 0:
     raise ValueError(f"{command} failed with exit code: {exit_code}")
 

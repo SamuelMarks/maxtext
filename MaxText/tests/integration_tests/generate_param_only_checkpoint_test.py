@@ -39,7 +39,7 @@ def run_generate_param_only_checkpoint(attention_type, quantization):
       "-q", quantization,
   ]
 
-  subprocess.run(command, check=True, cwd="..")
+  subprocess.run(command, check=True, cwd=os.path.dirname(PKG_DIR))
 
 
 @pytest.mark.integration_test
