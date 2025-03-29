@@ -42,4 +42,4 @@ def test_maxtext_with_sft_in_trl():
       "--kl-div=7e-05",
   ]
 
-  subprocess.run(command, check=True, cwd="..")
+  subprocess.run(command, check=True, cwd=os.path.dirname(PKG_DIR))

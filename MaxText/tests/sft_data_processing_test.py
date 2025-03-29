@@ -96,7 +96,7 @@ class SFTDataProcessingTest(unittest.TestCase):
   def setUp(self):
     super().setUp()
     self.config = pyconfig.initialize(
-        ["python3", "-m", "MaxText.sft_trainer", os.path.join(PKG_DIR, "configs", "base.yml")],
+        [os.path.join(PKG_DIR, "sft_trainer"), os.path.join(PKG_DIR, "configs", "base.yml")],
         per_device_batch_size=1,
         run_name="test",
         mesh_axes=["data"],
