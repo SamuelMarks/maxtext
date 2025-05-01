@@ -70,7 +70,7 @@ def weight_dequant_cpu(x: torch.Tensor, s: torch.Tensor, block_size: int = 128) 
   return y
 
 
-def convert_fp8_to_bf16(fp8_path: string, bf16_path: string, cache_file_num: int = 2):
+def convert_fp8_to_bf16(fp8_path: str, bf16_path: str, cache_file_num: int = 2):
   """
   Converts a FP8 model to a BF16 model and saves the converted weights.
 
@@ -81,6 +81,7 @@ def convert_fp8_to_bf16(fp8_path: string, bf16_path: string, cache_file_num: int
   Args:
       fp8_path (str): The path to the directory containing the FP8 weights and model index file.
       bf16_path (str): The path to the directory where the converted BF16 weights will be saved.
+      cache_file_num (int): The cache file number.
 
   Raises:
       KeyError: If a required scale_inv tensor is missing for a weight.
