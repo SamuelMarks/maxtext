@@ -16,10 +16,11 @@ limitations under the License.
 
 from typing import Optional
 
-from flax import linen as nn
 import jax.numpy as jnp
 from jax.ad_checkpoint import checkpoint_name
 import jax.debug
+
+from flax import linen as nn
 
 from MaxText import common_types
 from MaxText.layers import normalizations
@@ -78,6 +79,8 @@ def get_query_pre_attn_scalar(config) -> float:
 
 
 class Gemma3VisionEncoderLayer(nn.Module):
+  """gemma 3 vision encoder layer"""
+
   config: Config
 
   @nn.compact

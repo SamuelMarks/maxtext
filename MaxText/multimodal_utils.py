@@ -17,9 +17,12 @@ limitations under the License.
 """Utils needed by multimodal pipelines for image processing."""
 
 import os
+
 import numpy as np
+
 import jax
 import jax.numpy as jnp
+
 from PIL import Image
 
 

@@ -238,6 +238,7 @@ def make_hf_eval_iterator(
     global_mesh,
     process_indices_eval,
 ):
+  """make Hugging Face evaluation iterator"""
   eval_ds = datasets.load_dataset(
       config.hf_path,
       data_dir=config.hf_data_dir,

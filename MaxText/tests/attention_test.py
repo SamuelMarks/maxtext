@@ -15,21 +15,24 @@
 """Tests for Attentions."""
 
 import itertools
+import os.path
 import random
 import sys
 import unittest
-import os.path
-import numpy as np
-from absl.testing import parameterized
 
-from MaxText import common_types
-
-from flax.core import freeze
-import jax
-import jax.numpy as jnp
-from MaxText import maxtext_utils
 import pytest
 
+from absl.testing import parameterized
+
+import numpy as np
+
+import jax
+import jax.numpy as jnp
+
+from flax.core import freeze
+
+from MaxText import common_types
+from MaxText import maxtext_utils
 from MaxText import pyconfig
 from MaxText.globals import PKG_DIR
 from MaxText.layers import attentions
@@ -41,7 +44,7 @@ MLA = attentions.MLA
 
 
 class BidirectionalBlockMaskTest(unittest.TestCase):
-  """Test for make_bidirectional_block_mask"""
+  """Test for make_bidirectional_block_mask."""
 
   def test_one_block_mask(self):
     bidirectional_mask = np.asarray([[0, 1, 1, 1, 0, 0]])
@@ -298,6 +301,7 @@ class AttentionTest(unittest.TestCase):
     )
 
   def get_data(self, dtype):
+    """get data"""
     lnx = jax.random.normal(
         self.rng,
         shape=(self.global_batch_size, self.max_target_length, self.embed_dim),
@@ -312,6 +316,7 @@ class AttentionTest(unittest.TestCase):
     return lnx, decoder_segment_ids, decoder_positions
 
   def get_structured_data(self, dtype):
+    """get structured data"""
     lnx = jax.random.normal(
         self.rng,
         shape=(self.global_batch_size, self.max_target_length, self.embed_dim),
@@ -390,9 +395,11 @@ class AttentionTest(unittest.TestCase):
 
   @pytest.mark.tpu_only
   def test_model_mode_prefill_dtype_bfloat16(self):
+    """test model mode prefill for dtype bfloat16"""
     self._test_model_mode_prefill_dtype(jnp.bfloat16)
 
   def _test_model_mode_prefill_dtype(self, dtype):
+    """test model mode prefill for specified dtype"""
     lnx, decoder_segment_ids, decoder_positions = self.get_data(dtype)
     prefill_length = self.cfg.max_prefill_predict_length
     lnx_prefill = lnx[:, 0:prefill_length, :]
@@ -989,6 +996,7 @@ class MLATest(parameterized.TestCase):
     return cfg, mla, mla_variable, rng
 
   def get_data(self, cfg, rng, dtype):
+    """get data"""
     lnx = jax.random.normal(
         rng,
         shape=(cfg.global_batch_size_to_train_on, cfg.max_target_length, cfg.base_emb_dim),
@@ -1003,6 +1011,7 @@ class MLATest(parameterized.TestCase):
     return lnx, decoder_segment_ids, decoder_positions
 
   def get_structured_data(self, cfg, rng, dtype):
+    """get structured data"""
     lnx = jax.random.normal(
         rng,
         shape=(

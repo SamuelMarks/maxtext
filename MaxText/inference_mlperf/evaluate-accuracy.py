@@ -33,7 +33,7 @@ def get_args():
 
 
 def get_groundtruth(processed_dataset_file):
-  import pandas as pd
+  import pandas as pd  # pylint: disable=import-outside-toplevel
 
   data = pd.read_pickle(processed_dataset_file)
   ground_truths = data["output"]

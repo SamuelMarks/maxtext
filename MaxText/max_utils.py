@@ -262,7 +262,8 @@ def initialize_jax_for_tpu_with_emergency_checkpointing(raw_keys):
       my_process_index = jax.process_index()
       processIndex_to_nodeRank = ocp.multihost.runtime_to_distributed_ids()
       max_logging.log(
-          f"Mapping of IDs: jax-init-info.txt={process_id}, NodeRank={node_rank}, ProcessIndex={my_process_index}, ProcessIndex->NodeRank={processIndex_to_nodeRank}"
+          f"Mapping of IDs: jax-init-info.txt={process_id}, NodeRank={node_rank}, ProcessIndex={my_process_index}, "
+          f"ProcessIndex->NodeRank={processIndex_to_nodeRank}"
       )
 
       my_in_pipeline_index = my_process_index % nodes_per_slice
