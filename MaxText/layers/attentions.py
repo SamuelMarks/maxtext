@@ -44,7 +44,6 @@ from MaxText.layers import embeddings
 from MaxText.layers import initializers
 from MaxText.layers import linears
 from MaxText.layers import quantizations
-from MaxText import max_logging
 from MaxText import max_utils
 
 partial = functools.partial
@@ -487,10 +486,13 @@ class AttentionOp(nn.Module):
       if lengths is None:
         lengths = jnp.sum(decoder_segment_ids, axis=-1)
 
-      if jax.devices()[0].platform == "tpu":
+      device_platform = jax.devices()[0].platform
+      if device_platform == "tpu":
         impl = self.tpu_ragged_attention
-      elif jax.devices()[0].platform == "gpu":
+      elif device_platform == "gpu":
         impl = self.gpu_ragged_attention
+      else:
+        raise NotImplementedError(device_platform)
       return impl(query, key, value, lengths, self.ragged_block_size)
 
     elif (
@@ -1037,6 +1039,8 @@ class AttentionOp(nn.Module):
       if self.reshape_q and q_seq_len == 1:
         query = jnp.broadcast_to(query, (b, n_kv, n // n_kv, 2, d))
       result = einsum("bkgtd,bksd->bkgts", query, key)
+    else:
+      raise NotImplementedError(self.compute_axis_order)
     return result
 
   def wv_product(self, attn_weights: Array, value: Array | KVTensor, model_mode: str) -> Array:

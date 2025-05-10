@@ -18,12 +18,11 @@ import subprocess
 import sys
 import os.path
 import tempfile
+import unittest
 
 import jax
 from jax.sharding import Mesh
 from jax.experimental import mesh_utils
-
-import unittest
 
 from MaxText import pyconfig
 from MaxText.input_pipeline import _grain_data_processing

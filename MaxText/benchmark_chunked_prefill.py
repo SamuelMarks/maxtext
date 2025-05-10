@@ -31,7 +31,6 @@ Configuration options like `use_chunked_prefill`, `prefill_chunk_size`,
 `inference_microbenchmark_prefix_cache_entries_num` control the benchmark behavior.
 """
 
-
 import os
 from typing import Any, Sequence
 import datetime

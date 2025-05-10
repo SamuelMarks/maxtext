@@ -18,7 +18,6 @@ limitations under the License.
 """ Utils that are only interesting to MaxText. """
 
 from typing import Optional
-
 import functools
 import pickle
 
@@ -435,7 +434,7 @@ def get_nested_value(dictionary, nested_key, default=None):
   return current_level
 
 
-def init_decode_state(apply_fn, params):
+def init_decode_state(apply_fn, params) -> train_state.TrainState:
   """Init train state with null opt state for decode."""
   state = train_state.TrainState(step=0, apply_fn=apply_fn, params=params, tx=None, opt_state={})  # type: ignore
   return state
