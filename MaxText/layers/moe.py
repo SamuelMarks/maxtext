@@ -768,8 +768,6 @@ class RoutedMoE(nn.Module):
     if is_llama4_decoder_layer:
       router_scores = jax.nn.sigmoid(top_k_weights.astype(jnp.float32)).astype(jnp.bfloat16)
       inputs = inputs * router_scores
-    else:
-      weights = self.reshape_and_update_weights(top_k_weights, top_k_indices)
     matmul_precision = lax.Precision(self.config.matmul_precision)
 
     if self.config.model_call_mode != "inference":
@@ -782,13 +780,12 @@ class RoutedMoE(nn.Module):
 
     cp, sub_seq = self.get_context_partition_and_sub_seq(seq_len)
 
-    # TODO @jacobplatin: allow Llama4 MoE to handle capacity factor > 0
     if self.config.capacity_factor > 0:
       # token dropping if needed
       if self.config.model_call_mode != "inference":
+        weights = self.reshape_and_update_weights(top_k_weights, top_k_indices)
         dispatch_mask, combine_mask = self.generate_masks(top_k_indices, weights)
         mask_axes = ("activation_batch", "activation_length", None, None)
-        input_axis = ("activation_batch", "activation_length", "activation_embed")
         dispatch_axis = ("activation_exp", "activation_batch_no_exp", None, "activation_embed")
         mlp_axis = ("activation_exp", "activation_batch_no_exp", None, "activation_mlp")
         dispatch_eimsum = "BSM,BSEC -> EBCM"
@@ -910,12 +907,9 @@ class RoutedMoE(nn.Module):
       with jax.named_scope("w_sum"):
         if is_llama4_decoder_layer:
           weights = self.reshape_and_update_weights(jnp.ones_like(top_k_weights), top_k_indices)
-        output = jnp.einsum(
-            "BSEM,BSE -> BSM",
-            intermediate_layer,
-            weights,
-        ).astype(self.dtype)
-      return output, None
+          output = jnp.einsum("BSEM,BSE -> BSM", intermediate_layer, weights).astype(self.dtype)
+          return output, None
+    raise NotImplementedError
 
   def retrieve_quantized_weight(
       self, inputs, gate_logits, pre_bias_logits, w0_kernel, w1_kernel, wo_kernel
