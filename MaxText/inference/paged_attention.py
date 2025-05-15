@@ -260,7 +260,7 @@ class PagedAttentionOp(nn.Module):
       if _use_kernel_v2:
         return self.paged_attention_v2_prefill(query, key_pages_var, value_pages_var, page_state), None, None
       return self.paged_dot_product_attention_with_max_and_sum(query, key, value)
-    elif model_mode == common_types.MODEL_MODE_AUTOREGRESSIVE:
+    elif model_mode == common_types.MODEL_MODE_AUTOREGRESSIVE and page_state is not None:
       self.update_decode_step_pages(key_pages_var, value_pages_var, key, value, page_state)
       if _use_kernel_v2:
         return self.paged_attention_v2_decode(query, key_pages_var, value_pages_var, page_state), None, None
