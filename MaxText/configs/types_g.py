@@ -19,6 +19,9 @@ from enum import Enum
 
 from pydantic import BaseModel, Field, PositiveInt, NonNegativeInt, NonNegativeFloat, validator, RootModel
 
+# TODO: Merge both `.types` into one
+from MaxText.configs.types import ParallelismConfig
+
 
 class DecoderBlockType(Enum):
   DEFAULT = "default"
