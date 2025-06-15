@@ -41,7 +41,7 @@ from MaxText import train
 from MaxText import maxtext_utils
 from MaxText import optimizers
 from MaxText import max_utils
-import MaxText.configs.loader
+from MaxText import pyconfig
 from MaxText.layers import models
 from MaxText.layers import quantizations
 from MaxText.utils import gcs_utils
@@ -144,7 +144,7 @@ def main(argv: Sequence[str]) -> None:
   print("Starting train_compile.py...", flush=True)
 
   # Parse and validate configuration
-  config = MaxText.configs.loader.initialize(argv)
+  config = pyconfig.initialize(argv)
   validate_config(config)
 
   # Create target mesh

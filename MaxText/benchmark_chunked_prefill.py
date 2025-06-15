@@ -46,7 +46,7 @@ from absl import app
 
 from MaxText import max_utils
 from MaxText import maxengine
-import MaxText.configs.loader
+from MaxText import pyconfig
 
 _WARMUP_ITERS = 2
 _BENCHMARK_ITERS = 5
@@ -373,7 +373,7 @@ def prepare_setting(argv: Sequence[str]):
   """
   jax.config.update("jax_default_prng_impl", "unsafe_rbg")
   os.environ["TF_CPP_MIN_LOG_LEVEL"] = "0"
-  config = MaxText.configs.loader.initialize(argv)
+  config = pyconfig.initialize(argv)
   max_utils.print_system_information()
 
   prefix_caching_hbm_byte = config.prefix_caching_hbm_byte

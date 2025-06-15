@@ -26,7 +26,7 @@ from jetstream.engine import engine_api
 
 from MaxText import max_utils
 from MaxText import maxengine
-import MaxText.configs.loader
+from MaxText import pyconfig
 from MaxText import profiler
 from MaxText import multimodal_utils
 # Placeholder: internal
@@ -86,7 +86,7 @@ def main(argv: Sequence[str]) -> None:
   jax.config.update("jax_default_prng_impl", "unsafe_rbg")
   os.environ["TF_CPP_MIN_LOG_LEVEL"] = "0"
 
-  config = MaxText.configs.loader.initialize(argv)
+  config = pyconfig.initialize(argv)
   _validate_config(config)
   max_utils.print_system_information()
 

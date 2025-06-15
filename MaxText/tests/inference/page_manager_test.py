@@ -21,7 +21,7 @@ import unittest
 import jax
 import jax.numpy as jnp
 
-import MaxText.configs.loader
+from MaxText import pyconfig
 from MaxText.globals import PKG_DIR
 from MaxText.inference.page_manager import PageManager, PageState
 
@@ -37,18 +37,18 @@ class TestPageManager(unittest.TestCase):
     self.max_target_length = 256
     self.max_pages_per_group = (self.max_target_length + self.tokens_per_page - 1) // self.tokens_per_page
 
-    overrides = {
-        "per_device_batch_size": 1.0,
-        "run_name": "test",
-        "enable_checkpointing": False,
-        "max_prefill_predict_length": self.max_prefill_predict_length,
-        "max_target_length": self.max_target_length,
-        "pagedattn_num_pages": self.num_pages,
-        "pagedattn_tokens_per_page": self.tokens_per_page,
-        "pagedattn_max_pages_per_group": self.max_pages_per_group,
-    }
-
-    self.config = MaxText.configs.loader.load_config(os.path.join(PKG_DIR, "configs", "base.yml"), overrides=overrides)
+    config = pyconfig.initialize(
+        [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
+        per_device_batch_size=1.0,
+        run_name="test",
+        enable_checkpointing=False,
+        max_prefill_predict_length=self.max_prefill_predict_length,
+        max_target_length=self.max_target_length,
+        pagedattn_num_pages=self.num_pages,
+        pagedattn_tokens_per_page=self.tokens_per_page,
+        pagedattn_max_pages_per_group=self.max_pages_per_group,
+    )
+    self.config = config
     self.max_page_groups = self.config.global_batch_size_to_load
 
     print("Note: Running PageManager tests locally without a JAX mesh.")

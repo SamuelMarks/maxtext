@@ -53,7 +53,7 @@ from MaxText import max_logging
 from MaxText import maxtext_utils
 from MaxText import max_utils
 from MaxText import optimizers
-import MaxText.configs.loader
+from MaxText import pyconfig
 from MaxText.globals import PKG_DIR
 from MaxText.layers import quantizations
 from MaxText.layers.models import Transformer
@@ -84,7 +84,7 @@ def convert(paxml_ckpt_path, maxtext_model_name, base_output_directory, run_name
       "checkpoint_period=1",
       "async_checkpointing=false",
   ]
-  cfg = MaxText.configs.loader.initialize(base_args)
+  cfg = pyconfig.initialize(base_args)
   init_rng, _ = random.split(random.PRNGKey(cfg.init_weights_seed), 2)
   devices_array = maxtext_utils.create_device_mesh(cfg)
   mesh = Mesh(devices_array, cfg.mesh_axes)

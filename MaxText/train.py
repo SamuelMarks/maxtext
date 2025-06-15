@@ -62,6 +62,7 @@ from MaxText import max_utils
 from MaxText import maxtext_utils
 from MaxText import optimizers
 from MaxText import profiler
+from MaxText import pyconfig
 from MaxText.gcp_workload_monitor import GCPWorkloadMonitor
 from MaxText.input_pipeline.input_pipeline_interface import create_data_iterator
 from MaxText.layers import quantizations
@@ -75,8 +76,6 @@ from MaxText.utils.goodput_utils import (
     maybe_record_goodput,
 )
 from MaxText.vertex_tensorboard import VertexTensorboardManager
-import MaxText.configs.loader
-
 # Placeholder: internal
 
 # pylint: disable=too-many-positional-arguments
@@ -982,7 +981,7 @@ def main(argv: Sequence[str]) -> None:
   os.environ["TF_CPP_MIN_LOG_LEVEL"] = "0"
   if "xla_tpu_spmd_rng_bit_generator_unsafe" not in os.environ.get("LIBTPU_INIT_ARGS", ""):
     os.environ["LIBTPU_INIT_ARGS"] = os.environ.get("LIBTPU_INIT_ARGS", "") + " --xla_tpu_spmd_rng_bit_generator_unsafe=true"
-  config = MaxText.configs.loader.initialize(argv)
+  config = pyconfig.initialize(argv)
   max_utils.print_system_information()
   validate_train_config(config)
   os.environ["TFDS_DATA_DIR"] = config.dataset_path or ""

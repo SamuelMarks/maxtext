@@ -30,7 +30,7 @@ from jax.sharding import PartitionSpec
 
 import tensorflow as tf
 
-import MaxText.configs.loader
+from MaxText import pyconfig
 from MaxText import multihost_dataloading
 from MaxText.globals import PKG_DIR
 
@@ -40,7 +40,7 @@ class MultihostDataloadingTest(unittest.TestCase):
   def setUp(self):
     super().setUp()
     batch_size = 4
-    config = MaxText.configs.loader.initialize(
+    config = pyconfig.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         per_device_batch_size=1,
         run_name="test",

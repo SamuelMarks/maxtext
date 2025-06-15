@@ -29,7 +29,7 @@ import jax.numpy as jnp
 from jax.sharding import Mesh
 
 from MaxText import maxtext_utils
-import MaxText.configs.loader
+from MaxText import pyconfig, maxengine
 from MaxText.common_types import DECODING_ACTIVE_SEQUENCE_INDICATOR
 from MaxText.globals import PKG_DIR
 from MaxText.layers import models
@@ -62,7 +62,7 @@ class MaxEngineTest(unittest.TestCase):
         "max_prefill_predict_length": 4,
         "return_log_prob": True,
     } | kwargs
-    config = MaxText.configs.loader.initialize(
+    config = pyconfig.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         **init_kwargs,
     )
@@ -80,7 +80,7 @@ class MaxEngineTest(unittest.TestCase):
     return ids, decoder_segment_ids, decoder_positions
 
   def test_stack_and_unstack_prefill_cache(self):
-    config = MaxText.configs.loader.initialize(
+    config = pyconfig.initialize(
         [None, os.path.join(PKG_DIR, "configs", "base.yml")],
         enable_checkpointing=False,
         stack_prefill_result_cache=True,
@@ -249,7 +249,7 @@ class MaxEngineTest(unittest.TestCase):
         true_length=4,
     )
 
-    existing_prefix = MaxText.maxengine.ExistingPrefix(
+    existing_prefix = maxengine.ExistingPrefix(
         cache=two_chunk_prefill_result["cache"], common_prefix_tokens=padding_tokens[:4]
     )
     two_chunk_prefill_result, two_chunk_first_token = engine.prefill(

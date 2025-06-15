@@ -27,7 +27,7 @@ import jax.numpy as jnp
 import jax
 
 from MaxText import maxtext_utils
-import MaxText.configs.loader
+from MaxText import pyconfig
 from MaxText.globals import PKG_DIR
 from MaxText.layers import models
 from MaxText.layers import quantizations
@@ -59,7 +59,7 @@ class GPT3(unittest.TestCase):
 
   def setUp(self):
     super().setUp()
-    self.cfg = MaxText.configs.loader.initialize(
+    self.cfg = pyconfig.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         run_name="test",
         enable_checkpointing=False,

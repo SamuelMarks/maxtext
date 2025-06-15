@@ -33,7 +33,7 @@ import jax.numpy as jnp
 from flax.core import freeze
 
 from MaxText import maxtext_utils
-import MaxText.configs.loader
+from MaxText import pyconfig
 from MaxText.common_types import DECODING_ACTIVE_SEQUENCE_INDICATOR, MODEL_MODE_AUTOREGRESSIVE, MODEL_MODE_PREFILL, MODEL_MODE_TRAIN
 from MaxText.globals import PKG_DIR
 from MaxText.layers import attentions
@@ -281,21 +281,16 @@ class AttentionTest(unittest.TestCase):
 
   def setUp(self):
     super().setUp()
-    config = MaxText.configs.loader.initialize(
-        [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
-        **self.config_arguments,
-    )
-    self.cfg = config
+    overrides = self.config_arguments.copy()
+    self.cfg = load_config(os.path.join(PKG_DIR, "configs", "base.yml"), overrides=overrides)
 
-    config_cp = MaxText.configs.loader.initialize(
-        [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
-        **self.config_arguments,
-        ici_context_parallelism=4,  # use context parallelism of 4
-        context_parallel_load_balance=False,  # set load_balancing to False such that
+    overrides_cp = overrides.copy()
+    overrides_cp.update({
+        "ici_context_parallelism": 4, # use context parallelism of 4
+        "context_parallel_load_balance": False, # set load_balancing to False such that
         # there's no need for reordering the input/output
-    )
-
-    self.cfg_cp = config_cp
+    })
+    self.cfg_cp = load_config(os.path.join(PKG_DIR, "configs", "base.yml"), overrides=overrides_cp)
     self.rng = jax.random.PRNGKey(0)
 
     devices_array = maxtext_utils.create_device_mesh(self.cfg)
@@ -630,7 +625,7 @@ class AttentionTest(unittest.TestCase):
 
     rtol, atol = 1e-02, 1e-02
 
-    config = MaxText.configs.loader.initialize(
+    config = pyconfig.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         per_device_batch_size=1.0,
         run_name="test",
@@ -730,7 +725,7 @@ class AttentionTest(unittest.TestCase):
 
     rtol, atol = 1e-02, 1e-02
 
-    config = MaxText.configs.loader.initialize(
+    config = pyconfig.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         per_device_batch_size=1.0,
         run_name="test",
@@ -1016,19 +1011,19 @@ class AttentionTest(unittest.TestCase):
 
 class MLATest(parameterized.TestCase):
   """Test for the Multi-Headed Latent Attention"""
+  overrides = {
+      "per_device_batch_size": 1.0,
+      "run_name": "test",
+      "enable_checkpointing": False,
+      "max_target_length": 128,
+      "max_prefill_predict_length": 16,
+      "attention_type": attentions.AttentionType.MLA.value,
+      "rope_type": rope_type,
+  }
 
   def init_mla(self, rope_type):
     """Helper function to initialize MLA with different model names."""
-    cfg = MaxText.configs.loader.initialize(
-        [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
-        per_device_batch_size=1.0,
-        run_name="test",
-        enable_checkpointing=False,
-        max_target_length=128,
-        max_prefill_predict_length=16,
-        attention_type=attentions.AttentionType.MLA.value,
-        rope_type=rope_type,
-    )
+    cfg = load_config(os.path.join(PKG_DIR, "configs", "base.yml"), overrides=self.overrides)
     rng = jax.random.PRNGKey(0)
 
     devices_array = maxtext_utils.create_device_mesh(cfg)
