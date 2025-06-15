@@ -14,10 +14,11 @@
 
 """Tests for Attentions."""
 
-import os
+import itertools
+import os.path
+import random
 import sys
 import unittest
-from unittest.mock import patch
 
 import pytest
 
@@ -25,9 +26,11 @@ from absl.testing import parameterized
 
 import numpy as np
 
+from jax.sharding import Mesh
 import jax
 import jax.numpy as jnp
-from jax.sharding import Mesh
+
+from flax.core import freeze
 
 from MaxText import maxtext_utils, pyconfig
 from MaxText.common_types import MODEL_MODE_AUTOREGRESSIVE, MODEL_MODE_PREFILL, MODEL_MODE_TRAIN, \
@@ -254,149 +257,763 @@ class ChunkedCausalMaskTest(unittest.TestCase):
       # pylint: disable=protected-access
       attentions._generate_chunk_attention_mask(mask_shape=(4, 4), chunk_size=0)
 
+
 class AttentionTest(unittest.TestCase):
-  """Test for the attention layer."""
+  """Test for the Attention"""
+
+  # Note: if you are changing these configs, please make sure to change the configs in
+  # context_parallelism.py as well, since we are using the same configs for both
+  # tests to get the same mesh and other config
+  config_arguments = {
+      "per_device_batch_size": 1.0,
+      "run_name": "test",
+      "enable_checkpointing": False,
+      "max_prefill_predict_length": 16,
+      "max_target_length": 512,
+      "sa_block_q": 128,
+      "sa_block_kv": 128,
+      "sa_block_kv_compute": 128,
+      "sa_block_q_dkv": 128,
+      "sa_block_kv_dkv": 128,
+      "sa_block_kv_dkv_compute": 128,
+      "sa_block_q_dq": 128,
+      "sa_block_kv_dq": 128,
+  }
 
   def setUp(self):
     super().setUp()
-    os.environ["TF_CPP_MIN_LOG_LEVEL"] = "0"
-    self.config = MaxTextConfig(
-        dataset_nesting_config=DatasetNestingConfig(
-            base=BaseDatasetConfig(
-                per_device_batch_size=1,
-                dataset_type=DatasetType.SYNTHETIC,
-            )
-        ),
-        basic_training_config=BasicTrainingConfig(
-            max_target_length=4096,
-        ),
-        model_architecture_config=ModelArchitectureConfig(
-            base_num_query_heads=8,
-            base_num_kv_heads=8,
-            head_dim=256,
-            base_emb_dim=2048,
-            base_mlp_dim=8192,
-            base_num_decoder_layers=2,
-        ),
-        quantization_config=QuantizationConfig(
-            dtype="bfloat16",
-        ),
-        checkpoint_config=CheckpointConfig(
-            saving=CheckpointSavingConfig(
-                enable_checkpointing=False,
-            ),
-        ),
-        attention_mechanism_config=AttentionMechanismConfig(
-            fused_qkv=False,
-            attention=AttentionKernel.DOT_PRODUCT,
-        ),
-        run_config=RunConfig(run_name="test", base_output_directory="attention_test_dir"),
+    config = pyconfig.initialize(
+        [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
+        **self.config_arguments,
     )
-    self.batch_size = self.config.dataset_nesting_config.base.per_device_batch_size
-    self.num_query_heads = self.config.model_architecture_config.base_num_query_heads
-    self.num_kv_heads = self.config.model_architecture_config.base_num_kv_heads
-    self.max_target_length = self.config.basic_training_config.max_target_length
-    self.head_dim = self.config.model_architecture_config.head_dim
-    self.embed_dim = self.config.model_architecture_config.base_emb_dim
+    self.cfg = config
 
-    devices = jax.devices()
-    self.mesh = Mesh(devices, ("data", "model"))
-
-    self.query = jnp.ones(
-        (self.batch_size, self.max_target_length, self.num_query_heads, self.head_dim),
-        dtype=self.config.quantization_config.dtype,
-    )
-    self.key = jnp.ones(
-        (self.batch_size, self.max_target_length, self.num_kv_heads, self.head_dim),
-        dtype=self.config.quantization_config.dtype,
-    )
-    self.value = jnp.ones(
-        (self.batch_size, self.max_target_length, self.num_kv_heads, self.head_dim),
-        dtype=self.config.quantization_config.dtype,
-    )
-    self.bias = jnp.ones(
-        (self.batch_size, self.num_query_heads, self.max_target_length, self.max_target_length),
-        dtype=self.config.quantization_config.dtype,
+    config_cp = pyconfig.initialize(
+        [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
+        **self.config_arguments,
+        ici_context_parallelism=4,  # use context parallelism of 4
+        context_parallel_load_balance=False,  # set load_balancing to False such that
+        # there's no need for reordering the input/output
     )
 
-  @parameterized.parameters("dot_product", "flash", "cudnn_flash_te", "splash")
-  @patch("jax.devices")
-  def test_attention_variants(self, attention_str, devices_mock):
-    """Test Attention variants."""
-    # devices_mock.return_value = test_utils.create_devices_array()
-    self.config.attention = attention_str
-    if attention_str == "splash" and not attentions.is_splash_attention_supported():
-      self.skipTest("splash attention is not supported")
-    if attention_str == "cudnn_flash_te":
-      if not attentions.is_cudnn_flash_attention_supported():
-        self.skipTest("could not run test for cudnn flash attention")
+    self.cfg_cp = config_cp
+    self.rng = jax.random.PRNGKey(0)
 
-    attention_layer = Attention(self.config, self.mesh, name="self_attention")
-    output, _ = attention_layer._apply_attention(self.query, self.key, self.value, self.bias)
+    devices_array = maxtext_utils.create_device_mesh(self.cfg)
+    self.mesh = Mesh(devices_array, self.cfg.mesh_axes)
+    devices_array_cp = maxtext_utils.create_device_mesh(self.cfg_cp)  # for context parallelism
+    self.mesh_cp = Mesh(devices_array_cp, self.cfg_cp.mesh_axes)  # for context parallelism
+    self.global_batch_size = self.cfg.global_batch_size_to_train_on
+    self.num_kv_heads = self.cfg.num_kv_heads
+    self.num_query_heads = self.cfg.num_query_heads
+    self.max_target_length = self.cfg.max_target_length
+    self.max_prefill_predict_length = self.cfg.max_prefill_predict_length
+    self.head_dim = self.cfg.head_dim
+    self.embed_dim = self.cfg.base_emb_dim
+    self.dtype = self.cfg.dtype
+    self.attention_type = self.cfg.attention_type
 
-    self.assertEqual(output.shape, self.query.shape)
-    self.assertEqual(output.dtype, jnp.dtype(self.config.quantization_config.dtype))
-
-  def test_unfused_attention(self):
-    """Test unfused Attention."""
-    attention_layer = Attention(self.config, self.mesh, name="self_attention")
-    rng = jax.random.PRNGKey(0)
-    query_in = jnp.ones(
-        (
-            self.config.dataset_nesting_config.base.per_device_batch_size,
-            self.config.basic_training_config.max_target_length,
-            self.config.model_architecture_config.base_emb_dim,
-        ),
-        dtype=self.config.quantization_config.dtype,
-    )
-    params = attention_layer.init(rng, query_in)["params"]
-    output = attention_layer.apply(
-        {"params": params},
-        query_in,
-        rngs={"dropout": rng},
-    )[0]
-    expected_shape = (
-        self.config.dataset_nesting_config.base.per_device_batch_size,
-        self.config.basic_training_config.max_target_length,
-        self.config.model_architecture_config.base_emb_dim,
+    self._attention_as_mha_generic = Attention(
+        config=self.cfg,
+        num_query_heads=self.num_query_heads,
+        num_kv_heads=self.num_kv_heads,
+        head_dim=self.head_dim,
+        max_target_length=self.max_target_length,
+        max_prefill_predict_length=self.max_prefill_predict_length,
+        mesh=self.mesh,
+        attention_kernel="dot_product",
+        dtype=self.dtype,
+        dropout_rate=self.cfg.dropout_rate,
+        name="self_attention",
+        attention_type=self.attention_type,
     )
 
-    self.assertEqual(output.shape, expected_shape)
-    self.assertEqual(output.dtype, jnp.dtype(self.config.quantization_config.dtype))
-
-  def test_fused_attention(self):
-    """Test fused Attention."""
-    self.config.attention_mechanism_config.fused_qkv = True
-    attention_layer = Attention(self.config, self.mesh, name="self_attention")
-    rng = jax.random.PRNGKey(0)
-    query_in = jnp.ones(
-        (
-            self.config.dataset_nesting_config.base.per_device_batch_size,
-            self.config.basic_training_config.max_target_length,
-            self.config.model_architecture_config.base_emb_dim,
-        ),
-        dtype=self.config.quantization_config.dtype,
-    )
-    params = attention_layer.init(rng, query_in)["params"]
-    output = attention_layer.apply(
-        {"params": params},
-        query_in,
-        rngs={"dropout": rng},
-    )[0]
-    expected_shape = (
-        self.config.dataset_nesting_config.base.per_device_batch_size,
-        self.config.basic_training_config.max_target_length,
-        self.config.model_architecture_config.base_emb_dim,
+    self._attention_as_mha_generic_variable = self._attention_as_mha_generic.init(
+        {"params": self.rng, "aqt": self.rng},
+        jnp.ones((self.global_batch_size, self.max_target_length, self.embed_dim)),
+        jnp.ones((self.global_batch_size, self.max_target_length, self.embed_dim)),
+        jnp.ones((self.global_batch_size, self.max_target_length)),
     )
 
-    self.assertEqual(output.shape, expected_shape)
-    self.assertEqual(output.dtype, jnp.dtype(self.config.quantization_config.dtype))
+  def get_data(self, dtype):
+    """get data"""
+    lnx = jax.random.normal(
+        self.rng,
+        shape=(self.global_batch_size, self.max_target_length, self.embed_dim),
+        dtype=dtype,
+    )
 
-  def test_quantized_kv_cache_attention(self):
-    self.config.quantization_config.quantize_kvcache = True
-    attention_layer = Attention(self.config, self.mesh, name="self_attention")
-    output, _ = attention_layer._apply_attention(self.query, self.key, self.value, self.bias)
-    self.assertEqual(output.dtype, jnp.bfloat16)
+    decoder_segment_ids = jax.random.randint(self.rng, (self.global_batch_size, self.max_target_length), 0, 4)
+    decoder_positions = jax.random.randint(
+        self.rng, (self.global_batch_size, self.max_target_length), 0, self.max_target_length
+    )
+
+    return lnx, decoder_segment_ids, decoder_positions
+
+  def get_structured_data(self, dtype):
+    """get structured data"""
+    lnx = jax.random.normal(
+        self.rng,
+        shape=(self.global_batch_size, self.max_target_length, self.embed_dim),
+        dtype=dtype,
+    )
+
+    decoder_positions = jnp.stack(
+        [jnp.arange(self.max_target_length, dtype=jnp.int32) for _ in range(self.global_batch_size)]
+    )
+
+    decoder_segment_ids = (
+        jax.numpy.zeros((self.global_batch_size, self.max_target_length)) + DECODING_ACTIVE_SEQUENCE_INDICATOR
+    )
+
+    return lnx, decoder_segment_ids, decoder_positions
+
+  @pytest.mark.tpu_only
+  def test_autoregression(self):
+    prefill_length = self.cfg.max_prefill_predict_length
+    decode_total_length = self.cfg.max_target_length
+    lnx, decoder_segment_ids, decoder_positions = self.get_structured_data(self.dtype)
+
+    mha_full = self._attention_as_mha_generic.apply(
+        self._attention_as_mha_generic_variable,
+        lnx,
+        lnx,
+        decoder_segment_ids=decoder_segment_ids,
+        inputs_positions=decoder_positions,
+        deterministic=True,
+        model_mode=MODEL_MODE_TRAIN,
+        rngs={"aqt": self.rng},
+    )
+
+    lnx_prefill = lnx[:, 0:prefill_length, :]
+    decoder_segment_ids_prefill = decoder_segment_ids[:, 0:prefill_length]
+    decoder_positions_prefill = decoder_positions[:, 0:prefill_length]
+
+    mha_prefill, output_cache = self._attention_as_mha_generic.apply(
+        self._attention_as_mha_generic_variable,
+        lnx_prefill,
+        lnx_prefill,
+        decoder_segment_ids=decoder_segment_ids_prefill,
+        inputs_positions=decoder_positions_prefill,
+        deterministic=True,
+        model_mode=MODEL_MODE_PREFILL,
+        rngs={"aqt": self.rng},
+        mutable=["cache"],
+    )
+
+    self.assertTrue(
+        jax.numpy.allclose(mha_prefill, mha_full[:, :prefill_length, :], rtol=1e-02, atol=1e-02, equal_nan=False)
+    )
+
+    for idx in range(prefill_length, decode_total_length):
+      lnx_idx = lnx[:, idx : idx + 1, :]
+      decoder_positions_idx = decoder_positions[:, idx : idx + 1]
+      self._attention_as_mha_generic_variable.update(output_cache)
+      mha_idx, output_cache = self._attention_as_mha_generic.apply(
+          self._attention_as_mha_generic_variable,
+          lnx_idx,
+          lnx_idx,
+          inputs_positions=decoder_positions_idx,
+          deterministic=True,
+          model_mode=MODEL_MODE_AUTOREGRESSIVE,
+          rngs={"aqt": self.rng},
+          mutable=["cache"],
+      )
+
+      mha_full_this_idx = mha_full[:, idx : idx + 1, :]
+      self.assertTrue(mha_full_this_idx.shape == mha_idx.shape)
+      self.assertTrue(jax.numpy.allclose(mha_full_this_idx, mha_idx, rtol=1e-02, atol=1e-02, equal_nan=False))
+
+  @pytest.mark.tpu_only
+  def test_model_mode_prefill_dtype_float32(self):
+    self._test_model_mode_prefill_dtype(jnp.float32)
+
+  @pytest.mark.tpu_only
+  def test_model_mode_prefill_dtype_bfloat16(self):
+    """test model mode prefill for dtype bfloat16"""
+    self._test_model_mode_prefill_dtype(jnp.bfloat16)
+
+  def _test_model_mode_prefill_dtype(self, dtype):
+    """test model mode prefill for specified dtype"""
+    lnx, decoder_segment_ids, decoder_positions = self.get_data(dtype)
+    prefill_length = self.cfg.max_prefill_predict_length
+    lnx_prefill = lnx[:, 0:prefill_length, :]
+    decoder_segment_ids_prefill = decoder_segment_ids[:, 0:prefill_length]
+    decoder_positions_prefill = decoder_positions[:, 0:prefill_length]
+
+    attention_as_mha_generic = Attention(
+        config=self.cfg,
+        num_query_heads=self.num_query_heads,
+        num_kv_heads=self.num_kv_heads,
+        head_dim=self.head_dim,
+        max_target_length=self.max_target_length,
+        max_prefill_predict_length=self.cfg.max_prefill_predict_length,
+        mesh=self.mesh,
+        attention_kernel="dot_product",
+        dtype=dtype,
+        dropout_rate=self.cfg.dropout_rate,
+        name="self_attention",
+    )
+
+    attention_as_mha_generic_variable = attention_as_mha_generic.init(
+        {"params": self.rng, "aqt": self.rng},
+        jnp.ones((self.global_batch_size, self.max_target_length, self.embed_dim)),
+        jnp.ones((self.global_batch_size, self.max_target_length, self.embed_dim)),
+        jnp.ones((self.global_batch_size, self.max_target_length)),
+    )
+
+    mha_prefill, _ = attention_as_mha_generic.apply(
+        attention_as_mha_generic_variable,
+        lnx_prefill,
+        lnx_prefill,
+        decoder_segment_ids=decoder_segment_ids_prefill,
+        inputs_positions=decoder_positions_prefill,
+        deterministic=True,
+        model_mode=MODEL_MODE_PREFILL,
+        rngs={"aqt": self.rng},
+        mutable=["cache"],
+    )
+
+    self.assertEqual(dtype, mha_prefill.dtype)
+
+  @pytest.mark.tpu_only
+  def test_tpu_kernel_attention_mha(self):
+    self.tpu_kernel_attention_helper(self.num_kv_heads)
+
+  @pytest.mark.tpu_only
+  def test_tpu_kernel_attention_gqa(self):
+    self.tpu_kernel_attention_helper(self.num_kv_heads // 2)
+
+  @pytest.mark.tpu_only
+  def test_tpu_kernel_attention_mqa(self):
+    self.tpu_kernel_attention_helper(1)
+
+  def tpu_kernel_attention_helper(self, num_kv_heads):
+    """Test equivalence between dot_product and TPU accelerated"""
+
+    lnx, decoder_segment_ids, decoder_positions = self.get_data(self.dtype)
+
+    attention_as_mha_generic = Attention(
+        config=self.cfg,
+        num_query_heads=self.num_query_heads,
+        num_kv_heads=num_kv_heads,
+        head_dim=self.head_dim,
+        max_target_length=self.max_target_length,
+        max_prefill_predict_length=self.cfg.max_prefill_predict_length,
+        mesh=self.mesh,
+        attention_kernel="dot_product",
+        dtype=self.dtype,
+        dropout_rate=self.cfg.dropout_rate,
+        name="self_attention",
+    )
+
+    attention_as_mha_generic_variable = attention_as_mha_generic.init(
+        {"params": self.rng, "aqt": self.rng},
+        jnp.ones((self.global_batch_size, self.max_target_length, self.embed_dim)),
+        jnp.ones((self.global_batch_size, self.max_target_length, self.embed_dim)),
+        jnp.ones((self.global_batch_size, self.max_target_length)),
+    )
+
+    mha_generic_output = attention_as_mha_generic.apply(
+        attention_as_mha_generic_variable,
+        lnx,
+        lnx,
+        decoder_segment_ids=decoder_positions,
+        inputs_positions=decoder_segment_ids,
+        deterministic=True,
+        model_mode=MODEL_MODE_TRAIN,
+        rngs={"aqt": self.rng},
+    )
+
+    attention_as_mha_flash = Attention(
+        config=self.cfg,
+        num_query_heads=self.num_query_heads,
+        num_kv_heads=num_kv_heads,
+        head_dim=self.head_dim,
+        max_target_length=self.max_target_length,
+        max_prefill_predict_length=self.cfg.max_prefill_predict_length,
+        mesh=self.mesh,
+        attention_kernel="flash",
+        dtype=self.dtype,
+        dropout_rate=self.cfg.dropout_rate,
+        name="self_attention",
+    )
+
+    attention_as_mha_flash_variable = attention_as_mha_flash.init(
+        {"params": self.rng, "aqt": self.rng},
+        jnp.ones((self.global_batch_size, self.max_target_length, self.embed_dim)),
+        jnp.ones((self.global_batch_size, self.max_target_length, self.embed_dim)),
+        jnp.ones((self.global_batch_size, self.max_target_length)),
+    )
+
+    mha_generic_flash_output = attention_as_mha_flash.apply(
+        attention_as_mha_flash_variable,
+        lnx,
+        lnx,
+        decoder_segment_ids=decoder_positions,
+        inputs_positions=decoder_segment_ids,
+        deterministic=True,
+        model_mode=MODEL_MODE_TRAIN,
+        rngs={"aqt": self.rng},
+    )
+
+    self.assertTrue(
+        jax.numpy.allclose(mha_generic_output, mha_generic_flash_output, rtol=1e-01, atol=1e-01, equal_nan=False)
+    )
+
+    # Test with Context Parallelism
+    attention_as_mha_flash_cp = Attention(
+        config=self.cfg_cp,  # we pass the context parallelism in the config
+        num_query_heads=self.cfg_cp.num_query_heads,
+        num_kv_heads=num_kv_heads,
+        head_dim=self.cfg_cp.head_dim,
+        max_target_length=self.cfg_cp.max_target_length,
+        max_prefill_predict_length=self.cfg_cp.max_prefill_predict_length,
+        mesh=self.mesh_cp,
+        attention_kernel="flash",
+        dtype=self.dtype,
+        dropout_rate=self.cfg_cp.dropout_rate,
+        name="self_attention_cp",
+    )
+    attention_as_mha_flash_cp_variable = attention_as_mha_flash_cp.init(
+        {"params": self.rng, "aqt": self.rng},
+        jnp.ones((self.global_batch_size, self.max_target_length, self.embed_dim)),
+        jnp.ones((self.global_batch_size, self.max_target_length, self.embed_dim)),
+        jnp.ones((self.global_batch_size, self.max_target_length)),
+    )
+
+    mha_generic_flash_cp_output = attention_as_mha_flash_cp.apply(
+        attention_as_mha_flash_cp_variable,
+        lnx,
+        lnx,
+        decoder_segment_ids=decoder_positions,
+        inputs_positions=decoder_segment_ids,
+        deterministic=True,
+        model_mode=MODEL_MODE_TRAIN,
+        rngs={"aqt": self.rng},
+    )
+
+    # Assert that the logits generated by the generic flash and flash attention+context parallelism are close
+    self.assertTrue(
+        jax.numpy.allclose(mha_generic_flash_output, mha_generic_flash_cp_output, rtol=1e-01, atol=1e-01, equal_nan=False),
+        msg="Logits from generic flash and flash attention+context parallelism are not close.",
+    )
+
+    # Assert that the logits generated by the generic dot product and flash attention+context parallelism are close
+    self.assertTrue(
+        jax.numpy.allclose(mha_generic_output, mha_generic_flash_cp_output, rtol=1e-01, atol=1e-01, equal_nan=False),
+        msg="Logits from generic dot product and flash attention+context parallelism are not close.",
+    )
+
+  @pytest.mark.tpu_only
+  def test_dot_product_cache_axis_order(self):
+    all_axis_orders = tuple(itertools.permutations(range(4)))
+    for axis_order in random.choices(all_axis_orders, k=4):
+      self.dot_product_attention_helper(prefill_cache_axis_order=axis_order, ar_cache_axis_order=axis_order)
+      print(f"passed test for {axis_order=}")
+
+  def dot_product_attention_helper(self, prefill_cache_axis_order, ar_cache_axis_order):
+    for compute_axis_order in [(0, 1, 2, 3), (0, 2, 1, 3)]:
+      self._dot_product_attention(
+          prefill_cache_axis_order,
+          ar_cache_axis_order,
+          compute_axis_order=compute_axis_order,
+      )
+      print(f"passed subtest for {compute_axis_order=}")
+
+  def _dot_product_attention(
+      self,
+      prefill_cache_axis_order,
+      ar_cache_axis_order,
+      compute_axis_order,
+  ):
+    """Test equalvant between different layout control in dot_product"""
+
+    rtol, atol = 1e-02, 1e-02
+
+    config = pyconfig.initialize(
+        [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
+        per_device_batch_size=1.0,
+        run_name="test",
+        enable_checkpointing=False,
+        max_target_length=128,
+        max_prefill_predict_length=16,
+        attention="dot_product",
+    )
+
+    prefill_length = config.max_prefill_predict_length
+    decode_total_length = config.max_target_length
+    lnx, decoder_segment_ids, decoder_positions = self.get_structured_data(config.dtype)
+
+    lnx_prefill = lnx[:, 0:prefill_length, :]
+    decoder_segment_ids_prefill = decoder_segment_ids[:, 0:prefill_length]
+    decoder_positions_prefill = decoder_positions[:, 0:prefill_length]
+
+    attention_w_layout = Attention(
+        mesh=self.mesh,
+        config=config,
+        num_query_heads=config.num_query_heads,
+        num_kv_heads=config.num_kv_heads,
+        head_dim=config.head_dim,
+        max_target_length=config.max_target_length,
+        max_prefill_predict_length=config.max_prefill_predict_length,
+        attention_kernel=config.attention,
+        dtype=config.dtype,
+        prefill_cache_axis_order=prefill_cache_axis_order,
+        ar_cache_axis_order=ar_cache_axis_order,
+        compute_axis_order=compute_axis_order,
+    )
+    attention_w_layout_variable = attention_w_layout.init(
+        {"params": self.rng, "aqt": self.rng},
+        jnp.ones((self.global_batch_size, config.max_target_length, config.base_emb_dim)),
+        jnp.ones((self.global_batch_size, config.max_target_length, config.base_emb_dim)),
+        jnp.ones((self.global_batch_size, config.max_target_length)),
+    )
+    attention_w_layout_full = attention_w_layout.apply(
+        attention_w_layout_variable,
+        lnx,
+        lnx,
+        decoder_segment_ids=decoder_segment_ids,
+        inputs_positions=decoder_positions,
+        deterministic=True,
+        model_mode=MODEL_MODE_TRAIN,
+        rngs={"aqt": self.rng},
+    )
+
+    attention_w_layout_prefill, attention_w_layout_output_cache = attention_w_layout.apply(
+        attention_w_layout_variable,
+        lnx_prefill,
+        lnx_prefill,
+        decoder_segment_ids=decoder_segment_ids_prefill,
+        inputs_positions=decoder_positions_prefill,
+        deterministic=True,
+        model_mode=MODEL_MODE_PREFILL,
+        rngs={"aqt": self.rng},
+        mutable=["cache"],
+    )
+    self.assertTrue(
+        jax.numpy.allclose(attention_w_layout_full[:, :prefill_length, :], attention_w_layout_prefill, equal_nan=False)
+    )
+
+    for idx in range(prefill_length, decode_total_length):
+
+      lnx_idx = lnx[:, idx : idx + 1, :]
+      decoder_positions_idx = decoder_positions[:, idx : idx + 1]
+
+      attention_w_layout_variable.update(attention_w_layout_output_cache)
+      attention_w_layout_idx, attention_w_layout_output_cache = attention_w_layout.apply(
+          attention_w_layout_variable,
+          lnx_idx,
+          lnx_idx,
+          inputs_positions=decoder_positions_idx,
+          deterministic=True,
+          model_mode=MODEL_MODE_AUTOREGRESSIVE,
+          rngs={"aqt": self.rng},
+          mutable=["cache"],
+      )
+
+      attention_w_layout_full_this_idx = attention_w_layout_full[:, idx : idx + 1, :]
+      self.assertTrue(attention_w_layout_full_this_idx.shape == attention_w_layout_idx.shape)
+      self.assertTrue(
+          jax.numpy.allclose(attention_w_layout_full_this_idx, attention_w_layout_idx, rtol=rtol, atol=atol, equal_nan=False)
+      )
+
+  @pytest.mark.tpu_only
+  def test_dot_product_reshape_q(self):
+    for compute_axis_order in [(0, 1, 2, 3), (0, 2, 1, 3)]:
+      self._dot_product_attention_reshape_q(
+          compute_axis_order=compute_axis_order,
+      )
+      print(f"test passed for compute_axis_order: {compute_axis_order}")
+
+  def _dot_product_attention_reshape_q(self, compute_axis_order):
+    """Test equalvant between q and reshape q in dot_product"""
+
+    rtol, atol = 1e-02, 1e-02
+
+    config = pyconfig.initialize(
+        [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
+        per_device_batch_size=1.0,
+        run_name="test",
+        enable_checkpointing=False,
+        max_target_length=128,
+        max_prefill_predict_length=16,
+        attention="dot_product",
+    )
+
+    prefill_length = config.max_prefill_predict_length
+    decode_total_length = config.max_target_length
+    lnx, decoder_segment_ids, decoder_positions = self.get_structured_data(config.dtype)
+
+    lnx_prefill = lnx[:, 0:prefill_length, :]
+    decoder_segment_ids_prefill = decoder_segment_ids[:, 0:prefill_length]
+    decoder_positions_prefill = decoder_positions[:, 0:prefill_length]
+
+    attention_wo_reshape_q = Attention(
+        mesh=self.mesh,
+        config=config,
+        num_query_heads=config.num_query_heads,
+        num_kv_heads=config.num_kv_heads,
+        head_dim=config.head_dim,
+        max_target_length=config.max_target_length,
+        max_prefill_predict_length=config.max_prefill_predict_length,
+        attention_kernel=config.attention,
+        dtype=config.dtype,
+        compute_axis_order=compute_axis_order,
+        reshape_q=False,
+    )
+    attention_wo_reshape_q_variable = attention_wo_reshape_q.init(
+        {"params": self.rng, "aqt": self.rng},
+        jnp.ones((self.global_batch_size, config.max_target_length, config.base_emb_dim)),
+        jnp.ones((self.global_batch_size, config.max_target_length, config.base_emb_dim)),
+        jnp.ones((self.global_batch_size, config.max_target_length)),
+    )
+
+    attention_w_reshape_q = Attention(
+        mesh=self.mesh,
+        config=config,
+        num_query_heads=config.num_query_heads,
+        num_kv_heads=config.num_kv_heads,
+        head_dim=config.head_dim,
+        max_target_length=config.max_target_length,
+        max_prefill_predict_length=config.max_prefill_predict_length,
+        attention_kernel=config.attention,
+        dtype=config.dtype,
+        compute_axis_order=compute_axis_order,
+        reshape_q=True,
+    )
+    attention_w_reshape_q_variable = attention_w_reshape_q.init(
+        {"params": self.rng, "aqt": self.rng},
+        jnp.ones((self.global_batch_size, config.max_target_length, config.base_emb_dim)),
+        jnp.ones((self.global_batch_size, config.max_target_length, config.base_emb_dim)),
+        jnp.ones((self.global_batch_size, config.max_target_length)),
+    )
+
+    attention_wo_reshape_q_full = attention_wo_reshape_q.apply(
+        attention_wo_reshape_q_variable,
+        lnx,
+        lnx,
+        decoder_segment_ids=decoder_segment_ids,
+        inputs_positions=decoder_positions,
+        deterministic=True,
+        model_mode=MODEL_MODE_TRAIN,
+        rngs={"aqt": self.rng},
+    )
+
+    attention_w_reshape_q_full = attention_w_reshape_q.apply(
+        attention_w_reshape_q_variable,
+        lnx,
+        lnx,
+        decoder_segment_ids=decoder_segment_ids,
+        inputs_positions=decoder_positions,
+        deterministic=True,
+        model_mode=MODEL_MODE_TRAIN,
+        rngs={"aqt": self.rng},
+    )
+
+    attention_wo_reshape_q_prefill, attention_wo_reshape_q_output_cache = attention_wo_reshape_q.apply(
+        attention_wo_reshape_q_variable,
+        lnx_prefill,
+        lnx_prefill,
+        decoder_segment_ids=decoder_segment_ids_prefill,
+        inputs_positions=decoder_positions_prefill,
+        deterministic=True,
+        model_mode=MODEL_MODE_PREFILL,
+        rngs={"aqt": self.rng},
+        mutable=["cache"],
+    )
+    self.assertTrue(
+        jax.numpy.allclose(
+            attention_wo_reshape_q_full[:, :prefill_length, :], attention_wo_reshape_q_prefill, equal_nan=False
+        )
+    )
+
+    attention_w_reshape_q_prefill, attention_w_reshape_q_output_cache = attention_w_reshape_q.apply(
+        attention_w_reshape_q_variable,
+        lnx_prefill,
+        lnx_prefill,
+        decoder_segment_ids=decoder_segment_ids_prefill,
+        inputs_positions=decoder_positions_prefill,
+        deterministic=True,
+        model_mode=MODEL_MODE_PREFILL,
+        rngs={"aqt": self.rng},
+        mutable=["cache"],
+    )
+    self.assertTrue(
+        jax.numpy.allclose(attention_w_reshape_q_full[:, :prefill_length, :], attention_w_reshape_q_prefill, equal_nan=False)
+    )
+
+    self.assertTrue(jax.numpy.allclose(attention_wo_reshape_q_prefill, attention_w_reshape_q_prefill, equal_nan=False))
+    self.assertTrue(
+        jax.numpy.allclose(
+            attention_wo_reshape_q_full[:, :prefill_length, :],
+            attention_w_reshape_q_full[:, :prefill_length, :],
+            equal_nan=False,
+        )
+    )
+
+    for idx in range(prefill_length, decode_total_length):
+
+      lnx_idx = lnx[:, idx : idx + 1, :]
+      decoder_positions_idx = decoder_positions[:, idx : idx + 1]
+
+      attention_wo_reshape_q_variable.update(attention_wo_reshape_q_output_cache)
+      attention_wo_reshape_q_idx, attention_wo_reshape_q_output_cache = attention_wo_reshape_q.apply(
+          attention_wo_reshape_q_variable,
+          lnx_idx,
+          lnx_idx,
+          inputs_positions=decoder_positions_idx,
+          deterministic=True,
+          model_mode=MODEL_MODE_AUTOREGRESSIVE,
+          rngs={"aqt": self.rng},
+          mutable=["cache"],
+      )
+
+      attention_wo_reshape_q_full_this_idx = attention_wo_reshape_q_full[:, idx : idx + 1, :]
+      self.assertTrue(attention_wo_reshape_q_full_this_idx.shape == attention_wo_reshape_q_idx.shape)
+      self.assertTrue(
+          jax.numpy.allclose(
+              attention_wo_reshape_q_full_this_idx, attention_wo_reshape_q_idx, rtol=rtol, atol=atol, equal_nan=False
+          )
+      )
+
+      attention_w_reshape_q_variable.update(attention_w_reshape_q_output_cache)
+      attention_w_reshape_q_idx, attention_w_reshape_q_output_cache = attention_w_reshape_q.apply(
+          attention_w_reshape_q_variable,
+          lnx_idx,
+          lnx_idx,
+          inputs_positions=decoder_positions_idx,
+          deterministic=True,
+          model_mode=MODEL_MODE_AUTOREGRESSIVE,
+          rngs={"aqt": self.rng},
+          mutable=["cache"],
+      )
+
+      attention_w_reshape_q_full_this_idx = attention_w_reshape_q_full[:, idx : idx + 1, :]
+      self.assertTrue(attention_w_reshape_q_full_this_idx.shape == attention_w_reshape_q_idx.shape)
+      self.assertTrue(
+          jax.numpy.allclose(
+              attention_w_reshape_q_full_this_idx, attention_w_reshape_q_idx, rtol=rtol, atol=atol, equal_nan=False
+          )
+      )
+
+      self.assertTrue(
+          jax.numpy.allclose(attention_w_reshape_q_idx, attention_wo_reshape_q_idx, rtol=rtol, atol=atol, equal_nan=False)
+      )
+
+  def test_sliding_window_attention(self):
+    """Test sliding window attention"""
+
+    lnx, decoder_segment_ids, decoder_positions = self.get_structured_data(self.dtype)
+
+    # Global Attention
+    global_attn = Attention(
+        config=self.cfg,
+        num_query_heads=self.num_query_heads,
+        num_kv_heads=self.num_kv_heads,
+        head_dim=self.head_dim,
+        max_target_length=self.max_target_length,
+        max_prefill_predict_length=self.max_prefill_predict_length,
+        mesh=self.mesh,
+        attention_kernel="dot_product",
+        dtype=self.dtype,
+        dropout_rate=self.cfg.dropout_rate,
+        name="global_attention",
+        attention_type=attentions.AttentionType.GLOBAL,
+    )
+
+    # Attention with sliding window of size 8
+    sliding_attn = Attention(
+        config=self.cfg,
+        num_query_heads=self.num_query_heads,
+        num_kv_heads=self.num_kv_heads,
+        head_dim=self.head_dim,
+        max_target_length=self.max_target_length,
+        max_prefill_predict_length=self.max_prefill_predict_length,
+        mesh=self.mesh,
+        attention_kernel="dot_product",
+        dtype=self.dtype,
+        dropout_rate=self.cfg.dropout_rate,
+        name="sliding_window_attention",
+        attention_type=attentions.AttentionType.LOCAL_SLIDING,
+        sliding_window_size=8,
+    )
+
+    # Use freeze to fix the parameters to facilitate the comparison of sliding and global attention.
+    attn_variable = freeze(
+        sliding_attn.init(
+            {"params": self.rng, "aqt": self.rng},
+            jnp.ones((self.global_batch_size, self.max_target_length, self.embed_dim)),
+            jnp.ones((self.global_batch_size, self.max_target_length, self.embed_dim)),
+            jnp.ones((self.global_batch_size, self.max_target_length)),
+        )
+    )
+
+    global_attn_output = global_attn.apply(
+        attn_variable,
+        lnx,
+        lnx,
+        decoder_segment_ids=decoder_segment_ids,
+        inputs_positions=decoder_positions,
+        deterministic=True,
+        model_mode=MODEL_MODE_TRAIN,
+        rngs={"aqt": self.rng},
+    )
+
+    sliding_window_output = sliding_attn.apply(
+        attn_variable,
+        lnx,
+        lnx,
+        decoder_segment_ids=decoder_segment_ids,
+        inputs_positions=decoder_positions,
+        deterministic=True,
+        model_mode=MODEL_MODE_TRAIN,
+        rngs={"aqt": self.rng},
+    )
+
+    # Test if sliding window attention is different from global attention
+    self.assertFalse(
+        jax.numpy.allclose(
+            sliding_window_output.astype(jnp.bfloat16), global_attn_output.astype(jnp.bfloat16), rtol=1e-04, atol=1e-04
+        )
+    )
+
+    # Attention with sliding window of size max_target_length
+    # This should be equivalent to global attension.
+    sliding_attn = Attention(
+        config=self.cfg,
+        num_query_heads=self.num_query_heads,
+        num_kv_heads=self.num_kv_heads,
+        head_dim=self.head_dim,
+        max_target_length=self.max_target_length,
+        max_prefill_predict_length=self.max_prefill_predict_length,
+        mesh=self.mesh,
+        attention_kernel="dot_product",
+        dtype=self.dtype,
+        dropout_rate=self.cfg.dropout_rate,
+        name="sliding_window_attention",
+        attention_type=attentions.AttentionType.LOCAL_SLIDING,
+        sliding_window_size=self.max_target_length,
+    )
+
+    sliding_window_output = sliding_attn.apply(
+        attn_variable,
+        lnx,
+        lnx,
+        decoder_segment_ids=decoder_segment_ids,
+        inputs_positions=decoder_positions,
+        deterministic=True,
+        model_mode=MODEL_MODE_TRAIN,
+        rngs={"aqt": self.rng},
+    )
+
+    # Test if sliding window attention with max_target_length size is the same as global attention
+    self.assertTrue(
+        jax.numpy.allclose(
+            sliding_window_output.astype(jnp.bfloat16), global_attn_output.astype(jnp.bfloat16), rtol=1e-04, atol=1e-04
+        )
+    )
+
 
 class MLATest(parameterized.TestCase):
   """Test for the Multi-Headed Latent Attention"""
