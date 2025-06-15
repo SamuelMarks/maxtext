@@ -27,7 +27,7 @@ import jax
 import jax.numpy as jnp
 from jax.sharding import PartitionSpec as P
 
-from MaxText import multihost_dataloading
+from MaxText import multihost_dataloading, pyconfig
 import MaxText.configs.loader
 from MaxText.input_pipeline._grain_data_processing import make_grain_train_iterator, make_grain_eval_iterator
 from MaxText.input_pipeline._hf_data_processing import make_hf_train_iterator, make_hf_eval_iterator

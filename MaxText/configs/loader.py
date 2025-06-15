@@ -1,89 +1,117 @@
 """
-Copyright 2025 Google LLC
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-     https://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+Config loader that manually builds pydantic classes from dictionaries and CLI overrides.
 """
 
-import sys
-from typing import Sequence
+import os
+from typing import Any, Dict, Optional
 
 import yaml
 
-from MaxText.configs.types import MaxTextConfig
+from MaxText.configs.types import (
+    MaxTextConfig,
+    CoreConfig,
+    ModelConfig,
+    CheckpointConfig,
+    OptimizerConfig,
+    DatasetConfig,
+    TokenizerConfig,
+    ParallelismConfig,
+    InferenceConfig,
+)
 
-def load_config_from_yaml_and_argv(argv: Sequence[str]) -> MaxTextConfig:
+
+def _merge_dicts(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively merge two dicts, with `override` taking priority."""
+    merged = dict(base)
+    for k, v in override.items():
+        if k in merged and isinstance(merged[k], dict) and isinstance(v, dict):
+            merged[k] = _merge_dicts(merged[k], v)
+        else:
+            merged[k] = v
+    return merged
+
+
+def load_yaml(path: str) -> Dict[str, Any]:
+    with open(path, "rt", encoding="utf8") as f:
+        return yaml.safe_load(f) or {}
+
+
+def load_config(
+        config_path: str, overrides: Optional[Dict[str, Any]] = None, base_dir: Optional[str] = None
+) -> MaxTextConfig:
     """
-    Loads the MaxTextConfig from a YAML file specified in argv[1]
-    and applies any command line overrides of the form key=value.
-
-    Args:
-        argv: sys.argv-like list of arguments.
-            argv[1] should be path to YAML file.
-            Subsequent arguments optionally in key=value format as overrides.
-
-    Returns:
-        An instance of MaxTextConfig.
+    Load config YAML file, recursively apply `base_config`, merge overrides,
+    construct and return a validated MaxTextConfig pydantic object.
     """
 
-    if len(argv) < 2:
-        raise ValueError("Please specify config YAML path as first argument")
+    base_dir = base_dir or os.path.dirname(os.path.abspath(__file__))
+    if not os.path.isabs(config_path):
+        config_path = os.path.join(base_dir, config_path)
 
-    config_path = argv[1]
+    # Load the config YAML
+    config_data = load_yaml(config_path)
 
-    # Load YAML config file into dictionary
-    with open(config_path, "r") as f:
-        config_dict = yaml.safe_load(f)
+    # Load and merge base config recursively
+    if "base_config" in config_data and config_data["base_config"]:
+        base_config_path = config_data.pop("base_config")
+        base_config_data = load_config(base_config_path, base_dir=base_dir).dict()
+        config_data = _merge_dicts(base_config_data, config_data)
 
-    # Parse overrides from argv (key=value)
-    for arg in argv[2:]:
-        if "=" not in arg:
-            continue
-        key, val = arg.split("=", 1)
-        # Convert val to proper type
-        try:
-            # Use yaml to parse val to proper python types (int, float, bool, etc)
-            parsed_val = yaml.safe_load(val)
-        except yaml.YAMLError:
-            parsed_val = val
-        # Support nested keys separated by dots
-        apply_override(config_dict, key.strip(), parsed_val)
+    # Apply manual overrides if any
+    if overrides:
+        config_data = _merge_dicts(config_data, overrides)
 
-    # pydantic config object with applied overrides
-    return MaxTextConfig(**config_dict)
+    # Extract sub-config dicts from config_data
+    core_data = {k: v for k, v in config_data.items() if k in CoreConfig.__fields__}
+    # For other submodels stored flat in root config (e.g. model fields might be at root)
+    # We must extract by their declared fields
 
-def apply_override(config_dict: dict, key: str, value):
-    """
-    Modifies config_dict in-place to apply override given a "dot" separated key.
+    # model config fields are keys in ModelConfig.__fields__:
+    model_keys = set(ModelConfig.__fields__)
+    model_data = {k: v for k, v in config_data.items() if k in model_keys}
 
-    Example:
-        key="model.base_emb_dim"
-        value=1024
+    checkpoint_keys = set(CheckpointConfig.__fields__)
+    checkpoint_data = {k: v for k, v in config_data.items() if k in checkpoint_keys}
 
-        Will set config_dict['model']['base_emb_dim'] = 1024
-    """
-    keys = key.split(".")
-    d = config_dict
-    for k in keys[:-1]:
-        if k not in d or not isinstance(d[k], dict):
-            d[k] = {}
-        d = d[k]
-    d[keys[-1]] = value
+    optimizer_keys = set(OptimizerConfig.__fields__)
+    optimizer_data = {k: v for k, v in config_data.items() if k in optimizer_keys}
 
-initialize = load_config_from_yaml_and_argv
+    dataset_keys = set(DatasetConfig.__fields__)
+    dataset_data = {k: v for k, v in config_data.items() if k in dataset_keys}
 
-if __name__ == "__main__":
-    # Simple CLI demo
-    cfg = load_config_from_yaml_and_argv(sys.argv)
-    print(cfg.model_dump_json(indent=4))
+    tokenizer_keys = set(TokenizerConfig.__fields__)
+    tokenizer_data = {k: v for k, v in config_data.items() if k in tokenizer_keys}
 
-__all__ = ["initialize", "load_config_from_yaml_and_argv"]
+    parallelism_keys = set(ParallelismConfig.__fields__)
+    parallelism_data = {k: v for k, v in config_data.items() if k in parallelism_keys}
+
+    inference_keys = set(InferenceConfig.__fields__)
+    inference_data = {k: v for k, v in config_data.items() if k in inference_keys}
+
+    # Construct model subobjects
+    core = CoreConfig(**core_data)
+    model = ModelConfig(**model_data)
+    checkpoint = CheckpointConfig(**checkpoint_data)
+    optimizer = OptimizerConfig(**optimizer_data)
+    dataset = DatasetConfig(**dataset_data)
+    tokenizer = TokenizerConfig(**tokenizer_data)
+    parallelism = ParallelismConfig(**parallelism_data)
+    inference = InferenceConfig(**inference_data)
+
+    # Compose and construct final MaxTextConfig instance
+    final_config = MaxTextConfig(
+        **core.dict(),
+        model=model,
+        checkpoint=checkpoint,
+        optimizer=optimizer,
+        dataset=dataset,
+        tokenizer=tokenizer,
+        parallelism=parallelism,
+        inference=inference,
+    )
+
+    return final_config
+
+initialize = load_config
+
+__all__ = ["load_config", "initialize"]

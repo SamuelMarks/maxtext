@@ -29,7 +29,7 @@ import jax.numpy as jnp
 from jax.sharding import Mesh
 
 from MaxText import maxtext_utils
-import MaxText.configs.loader, maxengine
+import MaxText.configs.loader
 from MaxText.common_types import DECODING_ACTIVE_SEQUENCE_INDICATOR
 from MaxText.globals import PKG_DIR
 from MaxText.layers import models
@@ -249,7 +249,7 @@ class MaxEngineTest(unittest.TestCase):
         true_length=4,
     )
 
-    existing_prefix = maxengine.ExistingPrefix(
+    existing_prefix = MaxText.maxengine.ExistingPrefix(
         cache=two_chunk_prefill_result["cache"], common_prefix_tokens=padding_tokens[:4]
     )
     two_chunk_prefill_result, two_chunk_first_token = engine.prefill(

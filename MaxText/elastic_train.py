@@ -62,7 +62,7 @@ from pathwaysutils.debug import timing
 
 import tensorflow as tf
 
-from MaxText import checkpointing
+from MaxText import checkpointing, pyconfig
 from MaxText import max_utils
 from MaxText import maxtext_utils
 from MaxText import max_logging

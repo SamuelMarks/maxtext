@@ -26,13 +26,14 @@ from flax.core import meta
 from flax import linen as nn
 
 from MaxText import maxtext_utils
-import MaxText.configs.loader
 from MaxText.common_types import MODEL_MODE_TRAIN
 from MaxText.globals import PKG_DIR
+from MaxText.layers import deepseek
 from MaxText.layers import pipeline
 from MaxText.layers import simple_layer
 from MaxText.train import main as train_main
-from MaxText.layers import deepseek
+import MaxText.configs.loader
+import MaxText.configs.types
 
 
 def assert_same_output_and_grad(f1, f2, *inputs):
@@ -234,7 +235,7 @@ class PipelineParallelismTest(unittest.TestCase):
   @pytest.mark.tpu_only
   def test_non_circular_same_output_and_grad(self):
     # 4 stages, 4 layers (no circular repeats, 1 layer per stage), 4 microbatches
-    config = MaxText.configs.loader.initialize(
+    config = MaxText.configs.types.MaxTextConfig(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         enable_checkpointing=False,
         run_name="non_circular",
