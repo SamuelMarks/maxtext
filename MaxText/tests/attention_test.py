@@ -35,6 +35,7 @@ from flax.core import freeze
 from MaxText import maxtext_utils
 from MaxText import pyconfig
 from MaxText.common_types import DECODING_ACTIVE_SEQUENCE_INDICATOR, MODEL_MODE_AUTOREGRESSIVE, MODEL_MODE_PREFILL, MODEL_MODE_TRAIN
+from MaxText.configs.loader import load_config
 from MaxText.globals import PKG_DIR
 from MaxText.layers import attentions
 from MaxText.layers.attentions import Attention, MLA, ChunkedCausalMask
@@ -1018,12 +1019,12 @@ class MLATest(parameterized.TestCase):
       "max_target_length": 128,
       "max_prefill_predict_length": 16,
       "attention_type": attentions.AttentionType.MLA.value,
-      "rope_type": rope_type,
   }
 
   def init_mla(self, rope_type):
     """Helper function to initialize MLA with different model names."""
-    cfg = load_config(os.path.join(PKG_DIR, "configs", "base.yml"), overrides=self.overrides)
+    cfg = load_config(os.path.join(PKG_DIR, "configs", "base.yml"),
+                      overrides=dict(rope_type=rope_type, **self.overrides))
     rng = jax.random.PRNGKey(0)
 
     devices_array = maxtext_utils.create_device_mesh(cfg)
