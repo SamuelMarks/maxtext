@@ -39,7 +39,7 @@ from MaxText.common_types import MODEL_MODE_AUTOREGRESSIVE, MODEL_MODE_PREFILL, 
     DECODING_ACTIVE_SEQUENCE_INDICATOR
 from MaxText.configs.types_g import MaxTextConfig, BaseDatasetConfig, DatasetNestingConfig, BasicTrainingConfig, \
     DatasetType, ModelArchitectureConfig, QuantizationConfig, CheckpointConfig, CheckpointSavingConfig, \
-    AttentionMechanismConfig, RunConfig, AttentionKernel, SplashAttentionRunConfig
+    AttentionMechanismConfig, RunConfig, AttentionKernel, SplashAttentionRunConfig, ICIParallelismConfig, MeshConfig
 from MaxText.configs.utils import merge_pydantic_models
 from MaxText.globals import PKG_DIR
 from MaxText.layers import attentions
@@ -321,25 +321,31 @@ class AttentionTest(unittest.TestCase):
     self.cfg = parse_yaml_file_as(MaxTextConfig, os.path.join(PKG_DIR, "configs", "base.yml"))
     self.cfg = merge_pydantic_models(self.cfg, self.config_arguments)
 
-    self.cfg_cp = merge_pydantic_models(self.cfg.model_copy(deep=True),
-        ici_context_parallelism=4,  # use context parallelism of 4
-        context_parallel_load_balance=False,  # set load_balancing to False such that
+    self.cfg_cp = merge_pydantic_models(
+        self.cfg.model_copy(deep=True),
+        MaxTextConfig(
+            # use context parallelism of 4
+            ici_parallelism=ICIParallelismConfig(ici_context_parallelism=4),
+            # set load_balancing to False such that there's no need for reordering the input/output
+          mesh_config=MeshConfig(context_parallel_load_balance=False))
     )
     self.rng = jax.random.PRNGKey(0)
 
-    devices_array = maxtext_utils.create_device_mesh(self.cfg)
+    devices_array = maxtext_utils.create_device_mesh_with_maxtextconfig(self.cfg)
     self.mesh = Mesh(devices_array, self.cfg.mesh_axes)
-    devices_array_cp = maxtext_utils.create_device_mesh(self.cfg_cp)  # for context parallelism
-    self.mesh_cp = Mesh(devices_array_cp, self.cfg_cp.mesh_axes)  # for context parallelism
-    self.global_batch_size = self.cfg.global_batch_size_to_train_on
-    self.num_kv_heads = self.cfg.num_kv_heads
-    self.num_query_heads = self.cfg.num_query_heads
-    self.max_target_length = self.cfg.max_target_length
-    self.max_prefill_predict_length = self.cfg.max_prefill_predict_length
-    self.head_dim = self.cfg.head_dim
-    self.embed_dim = self.cfg.base_emb_dim
-    self.dtype = self.cfg.dtype
-    self.attention_type = self.cfg.attention_type
+    devices_array_cp = maxtext_utils.create_device_mesh_with_maxtextconfig(self.cfg_cp)  # for context parallelism
+    self.mesh_cp = Mesh(devices_array_cp, self.cfg_cp.mesh_config.mesh_axes)  # for context parallelism
+    self.global_batch_size = self.cfg.dataset_nesting_config.base.per_device_batch_size * len(jax.devices())
+    if hasattr(self.cfg.dataset_nesting_config.base, "per_device_batch_size"):
+        self.global_batch_size = int(self.cfg.dataset_nesting_config.base.per_device_batch_size) * len(jax.devices())
+    self.num_kv_heads = self.cfg.model_architecture_config.base_num_kv_heads
+    self.num_query_heads = self.cfg.model_architecture_config.base_num_query_heads
+    self.max_target_length = self.cfg.basic_training_config.max_target_length
+    self.max_prefill_predict_length = self.cfg.basic_training_config.max_prefill_predict_length
+    self.head_dim = self.cfg.model_architecture_config.head_dim
+    self.embed_dim = self.cfg.model_architecture_config.base_emb_dim
+    self.dtype = self.cfg.quantization_config.dtype
+    self.attention_type = self.cfg.attention_mechanism_config.attention
 
     self._attention_as_mha_generic = Attention(
         config=self.cfg,

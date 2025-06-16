@@ -848,6 +848,7 @@ class MaxTextConfig(BaseModel):
 
   mla_config: Optional[MLAConfig] = None
   hardware_config: HardwareConfig = Field(default_factory=HardwareConfig)
+
   parallelism_config: ParallelismConfig = Field(default_factory=ParallelismConfig)
   tokenizer_config: TokenizerConfig = Field(default_factory=TokenizerConfig)
   dataset_nesting_config: DatasetNestingConfig = Field(default_factory=DatasetNestingConfig)
@@ -878,14 +879,8 @@ class MaxTextConfig(BaseModel):
   gcp_workload_monitor_config: GCPWorkloadMonitorConfig = Field(default_factory=GCPWorkloadMonitorConfig)
   inference_microbenchmark_config: InferenceMicrobenchmarkConfig = Field(default_factory=InferenceMicrobenchmarkConfig)
 
-  reuse_example_batch: NonNegativeInt = Field(default=0, description="For testing TPU performance, repeat the same batch.")
+  rep: NonNegativeInt = Field(default=0, description="For testing TPU performance, repeat the same batch.")
   max_checkify: bool = Field(default=False, description="Enable extra checks using jax.checkify (affects performance).")
 
-  # Fields from `dpo.yml` etc. are typically booleans or simple types already covered,
-  # or they override values in the sub-configs. For example, `dpo.yml` has `use_dpo: true`.
-  # This would be loaded by setting `maxtext_config.dpo_specific_config.use_dpo = True`.
-  # Model specific parameters from `configs/models/*.yml` would populate the `model_architecture_config`, etc.
-
-  class Config:
-    extra = "forbid"
-    validate_assignment = True
+  ici_parallelism: ICIParallelismConfig = Field(default_factory=ICIParallelismConfig)
+  mesh_config: MeshConfig = Field(default_factory=MeshConfig)
