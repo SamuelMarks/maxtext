@@ -24,6 +24,8 @@ import pytest
 
 from absl.testing import parameterized
 
+from pydantic_yaml import parse_yaml_file_as
+
 import numpy as np
 
 from jax.sharding import Mesh
@@ -35,7 +37,10 @@ from flax.core import freeze
 from MaxText import maxtext_utils, pyconfig
 from MaxText.common_types import MODEL_MODE_AUTOREGRESSIVE, MODEL_MODE_PREFILL, MODEL_MODE_TRAIN, \
     DECODING_ACTIVE_SEQUENCE_INDICATOR
-from MaxText.configs.types_g import MaxTextConfig, BaseDatasetConfig, DatasetNestingConfig, BasicTrainingConfig, DatasetType, ModelArchitectureConfig, QuantizationConfig, CheckpointConfig, CheckpointSavingConfig, AttentionMechanismConfig, RunConfig, AttentionKernel
+from MaxText.configs.types_g import MaxTextConfig, BaseDatasetConfig, DatasetNestingConfig, BasicTrainingConfig, \
+    DatasetType, ModelArchitectureConfig, QuantizationConfig, CheckpointConfig, CheckpointSavingConfig, \
+    AttentionMechanismConfig, RunConfig, AttentionKernel, SplashAttentionRunConfig
+from MaxText.configs.utils import merge_pydantic_models
 from MaxText.globals import PKG_DIR
 from MaxText.layers import attentions
 from MaxText.layers.attentions import Attention, MLA, ChunkedCausalMask
@@ -264,39 +269,62 @@ class AttentionTest(unittest.TestCase):
   # Note: if you are changing these configs, please make sure to change the configs in
   # context_parallelism.py as well, since we are using the same configs for both
   # tests to get the same mesh and other config
-  config_arguments = {
-      "per_device_batch_size": 1.0,
-      "run_name": "test",
-      "enable_checkpointing": False,
-      "max_prefill_predict_length": 16,
-      "max_target_length": 512,
-      "sa_block_q": 128,
-      "sa_block_kv": 128,
-      "sa_block_kv_compute": 128,
-      "sa_block_q_dkv": 128,
-      "sa_block_kv_dkv": 128,
-      "sa_block_kv_dkv_compute": 128,
-      "sa_block_q_dq": 128,
-      "sa_block_kv_dq": 128,
-  }
+  config_arguments: MaxTextConfig = MaxTextConfig(
+      run_config=RunConfig(run_name="test",
+                           base_output_directory="attention_test_dir"),
+      dataset_nesting_config=DatasetNestingConfig(
+          base=BaseDatasetConfig(
+              per_device_batch_size=1.0,
+              dataset_type=DatasetType.SYNTHETIC,
+          )
+      ),
+      basic_training_config=BasicTrainingConfig(
+          max_target_length=512,
+          max_prefill_predict_length=16
+      ),
+      model_architecture_config=ModelArchitectureConfig(
+          base_num_query_heads=8,
+          base_num_kv_heads=8,
+          head_dim=256,
+          base_emb_dim=2048,
+          base_mlp_dim=8192,
+          base_num_decoder_layers=2,
+      ),
+      quantization_config=QuantizationConfig(
+          dtype="bfloat16",
+      ),
+      checkpoint_config=CheckpointConfig(
+          saving=CheckpointSavingConfig(
+              enable_checkpointing=False,
+          ),
+      ),
+      attention_mechanism_config=AttentionMechanismConfig(
+          fused_qkv=False,
+          attention=AttentionKernel.DOT_PRODUCT,
+      ),
+      splash_attention_run_config=SplashAttentionRunConfig(
+          sa_block_q=128,
+          sa_block_kv=128,
+          sa_block_kv_compute=128,
+          sa_block_q_dkv=128,
+          sa_block_kv_dkv=128,
+          sa_block_kv_dkv_compute=128,
+          sa_block_q_dq=128,
+          sa_block_kv_dq=128,
+      )
+  )
+  cfg: MaxTextConfig
 
   def setUp(self):
     super().setUp()
-    config = pyconfig.initialize(
-        [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
-        **self.config_arguments,
-    )
-    self.cfg = config
 
-    config_cp = pyconfig.initialize(
-        [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
-        **self.config_arguments,
+    self.cfg = parse_yaml_file_as(MaxTextConfig, os.path.join(PKG_DIR, "configs", "base.yml"))
+    self.cfg = merge_pydantic_models(self.cfg, self.config_arguments)
+
+    self.cfg_cp = merge_pydantic_models(self.cfg.model_copy(deep=True),
         ici_context_parallelism=4,  # use context parallelism of 4
         context_parallel_load_balance=False,  # set load_balancing to False such that
-        # there's no need for reordering the input/output
     )
-
-    self.cfg_cp = config_cp
     self.rng = jax.random.PRNGKey(0)
 
     devices_array = maxtext_utils.create_device_mesh(self.cfg)
