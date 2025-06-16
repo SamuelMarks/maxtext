@@ -13,7 +13,8 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 """
-from MaxText.configs.types_g import MaxTextConfig
+
+import rich
 
 # pylint: disable=bare-except, consider-using-generator
 """ Utils that are only interesting to MaxText. """
@@ -45,6 +46,7 @@ import orbax.checkpoint.experimental.emergency.replicator_checkpoint_manager as 
 from MaxText import checkpointing
 from MaxText import max_logging
 from MaxText import max_utils
+from MaxText.configs.types_g import MaxTextConfig
 from MaxText.common_types import DecoderBlockType, MODEL_MODE_PREFILL, MODEL_MODE_AUTOREGRESSIVE
 from MaxText.inference.page_manager import PageState
 
@@ -912,21 +914,31 @@ def logical_axis_rules_pp_act_as_dp(logical_rules):
     new_rules.append((key, new_physical_axes))
   return tuple(new_rules)
 
+
 # TODO: Replace `create_device_mesh` with this function
 def create_device_mesh_with_maxtextconfig(config: MaxTextConfig, devices=None):
   """Creates a device mesh with each slice in its own data parallel group. If there is only one slice, uses two replicas"""
   if devices is None:
     devices = jax.devices()
   num_devices = len(devices)
-  num_slices = 1 if config.inference_microbenchmark_config.inference_benchmark_test else config.hardware_config.num_slices
+  num_slices = (
+      1
+      if config.inference_microbenchmark_config.inference_benchmark_test or config.hardware_config.num_slices == -1
+      else config.hardware_config.num_slices
+  )
   num_devices_per_slice = num_devices // num_slices
 
   multi_slice_env = num_slices > 1
 
   # Find possible unspecified parallelisms
-  ici_parallelism = max_utils.fill_unspecified_mesh_axes(config.ici_parallelism.ici_data_parallelism, num_devices_per_slice, "ICI")
+  rich.print(config.ici_parallelism)
+  ici_parallelism = max_utils.fill_unspecified_mesh_axes(
+      [config.ici_parallelism.ici_data_parallelism], num_devices_per_slice, "ICI"
+  )
 
-  allow_split_physical_axes = config.mesh_config.allow_split_physical_axes if config.mesh_config.allow_split_physical_axes else False
+  allow_split_physical_axes = (
+      config.mesh_config.allow_split_physical_axes if config.mesh_config.allow_split_physical_axes else False
+  )
 
   if multi_slice_env:
     dcn_parallelism = max_utils.fill_unspecified_mesh_axes(config.dcn_parallelism.copy(), num_slices, "DCN")

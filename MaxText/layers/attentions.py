@@ -38,6 +38,7 @@ from flax.linen import partitioning
 
 from MaxText import max_utils
 from MaxText.common_types import DecoderBlockType, DEFAULT_MASK_VALUE, BATCH, HEAD, KV_LENGTH, D_KV, CACHE_BATCH_PREFILL, CACHE_SEQUENCE, AxisNames, CACHE_BATCH, CACHE_HEADS, CACHE_SCALE_BATCH, CACHE_KV, CACHE_SCALE_SEQUENCE, CACHE_SCALE_HEADS, CACHE_SCALE_KV, AxisIdxes, LENGTH, DType, Config, Array, Q_LENGTH, DECODE_LENGTH, DECODE_BATCH, PREFILL_KV_BATCH, KV_HEAD, KV_HEAD_DIM, KV_BATCH, EMBED, MODEL_MODE_AUTOREGRESSIVE, DECODING_ACTIVE_SEQUENCE_INDICATOR, MODEL_MODE_TRAIN, MODEL_MODE_PREFILL
+from MaxText.configs.types_g import AttentionKernel
 from MaxText.inference import kvcache
 from MaxText.inference import page_manager
 from MaxText.inference import paged_attention
@@ -1350,13 +1351,13 @@ class Attention(nn.Module):
         attention_type=self.attention_type,
         attn_logits_soft_cap=self.attn_logits_soft_cap,
         sliding_window_size=self.sliding_window_size,
-        chunk_attn_window_size=self.config.chunk_attn_window_size,
+        chunk_attn_window_size=self.config.attention_mechanism_config.chunk_attn_window_size,
         use_ragged_attention=self.use_ragged_attention,
         ragged_block_size=self.ragged_block_size,
     )
     # When paged attention is enabled, paged attention op is used for all model modes except TRAIN,
     # which uses default attention op.
-    if self.config.attention == "paged":
+    if self.config.attention_mechanism_config.attention == AttentionKernel.PAGED:
       self.paged_attention_op = paged_attention.PagedAttentionOp(
           mesh=self.mesh,
           num_pages=self.config.pagedattn_num_pages,
@@ -1608,7 +1609,7 @@ class Attention(nn.Module):
       inputs_kv = nn.with_logical_constraint(inputs_kv, self.decode_input_axis_names)
 
     # apply projection.
-    if self.config.fused_qkv:
+    if self.config.attention_mechanism_config.fused_qkv:
       query, key, value = self.qkv_projection(inputs_q, proj_name="qkv_proj")
     else:
       query = self.query_projection(inputs_q)

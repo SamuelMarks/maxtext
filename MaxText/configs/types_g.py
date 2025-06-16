@@ -14,8 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from typing import List, Optional, Any
 from enum import Enum
+from tempfile import gettempdir
+from typing import List, Optional, Any, Literal
+import os.path
 
 from pydantic import BaseModel, Field, PositiveInt, NonNegativeInt, NonNegativeFloat, validator, RootModel
 
@@ -149,7 +151,9 @@ class RunConfig(BaseModel):
   """Configuration related to a single run/experiment."""
 
   run_name: str = Field(default="", description="Name of the run. Auto-populated if empty.")
-  base_output_directory: str = Field(description="Base directory for all outputs.")
+  base_output_directory: str = Field(
+      default=os.path.join(gettempdir(), "maxtext"), description="Base directory for all outputs."
+  )
   metrics_file: Optional[str] = Field(default="", description="Local file for scalar metrics; empty means no local file.")
   gcs_metrics: bool = Field(default=False, description="Save metrics to GCS.")
   save_config_to_gcs: bool = Field(default=False, description="Save config to GCS.")
@@ -416,8 +420,8 @@ class HardwareConfig(BaseModel):
 class MeshConfig(BaseModel):
   """Mesh and sharding rule configurations."""
 
-  mesh_axes: List[str] = Field(
-      default_factory=lambda: [
+  mesh_axes: List[
+      Literal[
           "data",
           "stage",
           "fsdp",
@@ -431,7 +435,7 @@ class MeshConfig(BaseModel):
           "expert",
           "autoregressive",
       ]
-  )
+  ] = Field(default_factory=lambda: [])
   logical_axis_rules: List[List[Any]] = Field(
       default_factory=lambda: [["activation_batch", ["data", "fsdp", "fsdp_transpose", "expert"]]]
   )  # Simplified default
@@ -484,7 +488,7 @@ class ICIParallelismConfig(BaseModel):
   """Inter-Chip Interconnect (intra-slice) parallelism configurations."""
 
   ici_data_parallelism: int = Field(default=1)
-  ici_fsdp_parallelism: int = Field(default=-1)
+  ici_fsdp_parallelism: int = Field(default=4)
   ici_fsdp_transpose_parallelism: int = Field(default=1)
   ici_sequence_parallelism: int = Field(default=1)
   ici_context_parallelism: int = Field(default=1)
