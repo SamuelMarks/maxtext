@@ -339,7 +339,8 @@ class QuantizationConfig(BaseModel):
   quantization_local_shard_count: int = Field(default=-1, description="Local shard count for quantization range finding.")
 
   @field_validator("kv_quant_axis")
-  def validate_kv_axis(self, v, values):
+  @classmethod
+  def validate_kv_axis(cls, v, values):
     if values.get("quantize_kvcache") and v == "":
       raise ValueError("kv_quant_axis cannot be empty if quantize_kvcache is True")
     return v
@@ -724,7 +725,8 @@ class KVLayoutRunConfig(BaseModel):
   reshape_q: bool = Field(default=False)
 
   @field_validator("compute_axis_order")
-  def validate_compute_layout(self, v):
+  @classmethod
+  def validate_compute_layout(cls, v):
     if v not in ("0,1,2,3", "0,2,1,3"):
       raise ValueError("compute_axis_order must be '0,1,2,3' or '0,2,1,3'")
     return v
