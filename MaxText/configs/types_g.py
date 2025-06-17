@@ -19,13 +19,30 @@ from tempfile import gettempdir
 from typing import List, Optional, Any, Literal
 import os.path
 
-from pydantic import BaseModel, Field, PositiveInt, NonNegativeInt, NonNegativeFloat, validator, RootModel
+from pydantic import BaseModel, Field, PositiveInt, NonNegativeInt, NonNegativeFloat, field_validator
 
 # TODO: Merge both `.types` into one
 from MaxText.configs.types import ParallelismConfig
 
 
 class DecoderBlockType(Enum):
+  """Specifies the type of decoder block to use in the model architecture.
+
+  Attributes:
+    DEFAULT: A standard or default decoder block implementation.
+    LLAMA2: Decoder block based on the Llama2 architecture.
+    MISTRAL: Decoder block based on the Mistral architecture.
+    MIXTRAL: Decoder block based on the Mixtral architecture (MoE).
+    DEEPSEEK: Decoder block based on the DeepSeek architecture.
+    GEMMA: Decoder block based on the Gemma architecture.
+    GEMMA2: Decoder block based on the Gemma2 architecture.
+    GEMMA3: Decoder block based on the Gemma3 architecture.
+    GPT3: Decoder block based on the GPT-3 architecture.
+    SIMPLE: A simplified decoder block for testing or basic models.
+    SIMPLE_MLP: A decoder block primarily composed of MLP layers.
+    LLAMA4: Decoder block based on the Llama4 architecture.
+  """
+
   DEFAULT = "default"
   LLAMA2 = "llama2"
   MISTRAL = "mistral"
@@ -96,6 +113,26 @@ class AttentionKernel(Enum):
 
 
 class RematPolicy(Enum):
+  """Defines the rematerialization (gradient checkpointing) policy for model layers.
+
+  Rematerialization is a technique to save memory by recomputing activations
+  during the backward pass instead of storing them. Different policies offer
+  trade-offs between memory savings and computational overhead.
+
+  Attributes:
+    MINIMAL: Rematerialize the minimal number of activations needed.
+    SAVE_DOT_WITH_CONTEXT_EXCEPT_MLP: Save dot products with context, except for MLP layers.
+    SAVE_DOT_EXCEPT_MLPWI: Save dot products, except for the first MLP weight matrix (wi).
+    SAVE_DOT_EXCEPT_MLP: Save dot products, except for MLP layers.
+    SAVE_QKV_PROJ: Save Query, Key, and Value projections.
+    QKV_PROJ_OFFLOADED: Save Query, Key, and Value projections, with offloading to host memory.
+    CUSTOM: A custom rematerialization policy defined by individual tensor configurations.
+    MINIMAL_OFFLOADED: Rematerialize minimal activations, with offloading to host memory.
+    SAVE_OUT_PROJ: Save the output projection.
+    FULL: Rematerialize all activations (equivalent to no checkpointing).
+    MINIMAL_FLASH: Minimal rematerialization policy specifically for Flash Attention.
+  """
+
   MINIMAL = "minimal"
   SAVE_DOT_WITH_CONTEXT_EXCEPT_MLP = "save_dot_with_context_except_mlp"
   SAVE_DOT_EXCEPT_MLPWI = "save_dot_except_mlpwi"
@@ -301,8 +338,8 @@ class QuantizationConfig(BaseModel):
   kv_quant_dtype: str = Field(default="int8", description="Data type for KV cache quantization.")
   quantization_local_shard_count: int = Field(default=-1, description="Local shard count for quantization range finding.")
 
-  @validator("kv_quant_axis")
-  def validate_kv_axis(cls, v, values):
+  @field_validator("kv_quant_axis")
+  def validate_kv_axis(self, v, values):
     if values.get("quantize_kvcache") and v == "":
       raise ValueError("kv_quant_axis cannot be empty if quantize_kvcache is True")
     return v
@@ -686,8 +723,8 @@ class KVLayoutRunConfig(BaseModel):
   compute_axis_order: str = Field(default="0,1,2,3")
   reshape_q: bool = Field(default=False)
 
-  @validator("compute_axis_order")
-  def validate_compute_layout(cls, v):
+  @field_validator("compute_axis_order")
+  def validate_compute_layout(self, v):
     if v not in ("0,1,2,3", "0,2,1,3"):
       raise ValueError("compute_axis_order must be '0,1,2,3' or '0,2,1,3'")
     return v

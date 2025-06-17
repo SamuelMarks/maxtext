@@ -18,7 +18,6 @@ import itertools
 import json
 import os.path
 import random
-import sys
 import unittest
 
 import pydantic_core
