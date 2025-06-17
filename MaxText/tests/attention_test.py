@@ -27,8 +27,6 @@ import yaml
 
 from absl.testing import parameterized
 
-from pydantic_yaml import parse_yaml_file_as
-
 import numpy as np
 
 from jax.sharding import Mesh
