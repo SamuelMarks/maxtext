@@ -85,14 +85,14 @@ def main():
       "Programming Language :: Python :: 3.10",
       "Programming Language :: Python :: 3.11",
       "Programming Language :: Python :: 3.12",
-      "Programming Language :: Python :: 3.13",
       "Programming Language :: ML"
     ],
     license="Apache-2.0",
     license_files=["LICENSE"],
     install_requires=[],
     test_suite=f"{package_name}{path.extsep}tests",
-    packages=find_packages()
+    packages=find_packages(),
+    python_requires=">=3.10",
   )
 
 
