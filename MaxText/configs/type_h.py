@@ -22,8 +22,7 @@ It uses a two-step process:
 """
 
 from enum import Enum
-from tempfile import gettempdir
-from typing import List, Optional, Any, Literal
+from typing import List, Optional, Any
 import os
 
 from pydantic import (
