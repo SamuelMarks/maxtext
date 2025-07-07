@@ -1856,7 +1856,7 @@ class MLA(Attention):
     else:
       # LoRA path for Q.
       self.wq_a = dense_general(
-          in_features_shape=self.config.emb_dim,
+          in_features_shape=self.config.base_emb_dim,
           out_features_shape=self.q_lora_rank,
           axis=-1,
           kernel_init=self.kernel_init,
@@ -1890,7 +1890,7 @@ class MLA(Attention):
 
     # KV LoRA path.
     self.wkv_a = dense_general(
-        in_features_shape=self.config.emb_dim,
+        in_features_shape=self.config.base_emb_dim,
         out_features_shape=self.kv_lora_rank + self.qk_rope_head_dim,
         axis=-1,
         kernel_init=self.kernel_init,

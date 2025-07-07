@@ -16,8 +16,21 @@ limitations under the License.
 
 import os.path
 
+import jax
+
 PKG_DIR = os.path.dirname(os.path.abspath(__file__))  # MaxText directory path
 EPS = 1e-8  # Epsilon to calculate loss
 DEFAULT_OCDBT_TARGET_DATA_FILE_SIZE = 2 * 1024**3  # Default checkpoint file size
 
-__all__ = ["DEFAULT_OCDBT_TARGET_DATA_FILE_SIZE", "EPS", "PKG_DIR"]
+devices = []
+def has_tpu():
+    return any(device.platform == 'tpu' for device in get_devices())
+
+def get_devices():
+    global devices
+    if not devices:
+        devices = jax.devices()
+    return devices
+
+
+__all__ = ["DEFAULT_OCDBT_TARGET_DATA_FILE_SIZE", "EPS", "PKG_DIR", "get_devices", "has_tpu"]

@@ -35,10 +35,11 @@ from flax.core import freeze
 from MaxText import maxtext_utils
 from MaxText.common_types import DECODING_ACTIVE_SEQUENCE_INDICATOR, MODEL_MODE_AUTOREGRESSIVE, MODEL_MODE_PREFILL, MODEL_MODE_TRAIN
 from MaxText.configs import types_j
-from MaxText.globals import PKG_DIR
+from MaxText.globals import PKG_DIR, has_tpu
 from MaxText.layers import attentions
 from MaxText.layers.attentions import Attention, MLA, ChunkedCausalMask
 
+tpu_present = has_tpu()
 
 class BidirectionalBlockMaskTest(unittest.TestCase):
   """Test for make_bidirectional_block_mask."""
@@ -298,13 +299,17 @@ class AttentionTest(unittest.TestCase):
     self.cfg_cp = config_cp
     self.rng = jax.random.PRNGKey(0)
 
-    devices_array = maxtext_utils.create_device_mesh(self.cfg)
+    if jax.devices()[0].platform == "cpu":
+        self.cfg_cp.mesh_axes = self.cfg.mesh_axes = ["data"]
+        self.cfg_cp.scan_layers = self.cfg.scan_layers = False
+
+    devices_array = maxtext_utils.create_device_mesh_with_maxtextconfig(self.cfg)
     self.mesh = Mesh(devices_array, self.cfg.mesh_axes)
-    devices_array_cp = maxtext_utils.create_device_mesh(self.cfg_cp)  # for context parallelism
+    devices_array_cp = maxtext_utils.create_device_mesh_with_maxtextconfig(self.cfg_cp)  # for context parallelism
     self.mesh_cp = Mesh(devices_array_cp, self.cfg_cp.mesh_axes)  # for context parallelism
-    self.global_batch_size = self.cfg.global_batch_size_to_train_on
-    self.num_kv_heads = self.cfg.num_kv_heads
-    self.num_query_heads = self.cfg.num_query_heads
+    self.global_batch_size = self.cfg.per_device_batch_size
+    self.num_kv_heads = self.cfg.base_num_kv_heads
+    self.num_query_heads = self.cfg.base_num_query_heads
     self.max_target_length = self.cfg.max_target_length
     self.max_prefill_predict_length = self.cfg.max_prefill_predict_length
     self.head_dim = self.cfg.head_dim
@@ -476,14 +481,17 @@ class AttentionTest(unittest.TestCase):
     self.assertEqual(dtype, mha_prefill.dtype)
 
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_tpu_kernel_attention_mha(self):
     self.tpu_kernel_attention_helper(self.num_kv_heads)
 
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_tpu_kernel_attention_gqa(self):
     self.tpu_kernel_attention_helper(self.num_kv_heads // 2)
 
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_tpu_kernel_attention_mqa(self):
     self.tpu_kernel_attention_helper(1)
 
@@ -651,8 +659,8 @@ class AttentionTest(unittest.TestCase):
     attention_w_layout = Attention(
         mesh=self.mesh,
         config=config,
-        num_query_heads=config.num_query_heads,
-        num_kv_heads=config.num_kv_heads,
+        num_query_heads=config.base_num_query_heads,
+        num_kv_heads=config.base_num_kv_heads,
         head_dim=config.head_dim,
         max_target_length=config.max_target_length,
         max_prefill_predict_length=config.max_prefill_predict_length,
@@ -751,8 +759,8 @@ class AttentionTest(unittest.TestCase):
     attention_wo_reshape_q = Attention(
         mesh=self.mesh,
         config=config,
-        num_query_heads=config.num_query_heads,
-        num_kv_heads=config.num_kv_heads,
+        num_query_heads=config.base_num_query_heads,
+        num_kv_heads=config.base_num_kv_heads,
         head_dim=config.head_dim,
         max_target_length=config.max_target_length,
         max_prefill_predict_length=config.max_prefill_predict_length,
@@ -771,8 +779,8 @@ class AttentionTest(unittest.TestCase):
     attention_w_reshape_q = Attention(
         mesh=self.mesh,
         config=config,
-        num_query_heads=config.num_query_heads,
-        num_kv_heads=config.num_kv_heads,
+        num_query_heads=config.base_num_query_heads,
+        num_kv_heads=config.base_num_kv_heads,
         head_dim=config.head_dim,
         max_target_length=config.max_target_length,
         max_prefill_predict_length=config.max_prefill_predict_length,
@@ -1019,7 +1027,7 @@ class MLATest(parameterized.TestCase):
 
   def init_mla(self, rope_type):
     """Helper function to initialize MLA with different model names."""
-    cfg = types_j.initialize(
+    cfg: types_j.MaxTextConfig = types_j.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         per_device_batch_size=1.0,
         run_name="test",
@@ -1028,15 +1036,17 @@ class MLATest(parameterized.TestCase):
         max_prefill_predict_length=16,
         attention_type=attentions.AttentionType.MLA.value,
         rope_type=rope_type,
+        mesh_axes=['data']
     )
     rng = jax.random.PRNGKey(0)
+    
 
     devices_array = maxtext_utils.create_device_mesh_with_maxtextconfig(cfg)
     mesh = Mesh(devices_array, cfg.mesh_axes)
 
-    global_batch_size = cfg.global_batch_size_to_train_on
-    num_kv_heads = cfg.num_kv_heads
-    num_query_heads = cfg.num_query_heads
+    global_batch_size = cfg.per_device_batch_size
+    num_kv_heads = cfg.base_num_kv_heads
+    num_query_heads = cfg.base_num_query_heads
     max_target_length = cfg.max_target_length
     max_prefill_predict_length = cfg.max_prefill_predict_length
     head_dim = cfg.head_dim
@@ -1093,7 +1103,7 @@ class MLATest(parameterized.TestCase):
     lnx = jax.random.normal(
         rng,
         shape=(
-            cfg.global_batch_size_to_train_on,
+            cfg.per_device_batch_size,
             cfg.max_target_length,
             cfg.base_emb_dim,
         ),
@@ -1101,11 +1111,11 @@ class MLATest(parameterized.TestCase):
     )
 
     decoder_positions = jnp.stack(
-        [jnp.arange(cfg.max_target_length, dtype=jnp.int32) for _ in range(cfg.global_batch_size_to_train_on)]
+        [jnp.arange(cfg.max_target_length, dtype=jnp.int32) for _ in range(cfg.per_device_batch_size)]
     )
 
     decoder_segment_ids = (
-        jax.numpy.zeros((cfg.global_batch_size_to_train_on, cfg.max_target_length)) + DECODING_ACTIVE_SEQUENCE_INDICATOR
+        jax.numpy.zeros((cfg.per_device_batch_size, cfg.max_target_length)) + DECODING_ACTIVE_SEQUENCE_INDICATOR
     )
 
     return lnx, decoder_segment_ids, decoder_positions

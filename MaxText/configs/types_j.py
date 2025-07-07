@@ -796,9 +796,9 @@ class DatasetGeneral(BaseModel):
     dataset_type: DatasetType = Field(
         DatasetType.TFDS, description="The type of the data loading pipeline."
     )
-    per_device_batch_size: float = Field(12.0, description="The batch size per device.")
-    eval_per_device_batch_size: float = Field(
-        0.0,
+    per_device_batch_size: int = Field(12, description="The batch size per device.")
+    eval_per_device_batch_size: int = Field(
+        0,
         description="The batch size per device for evaluation. Defaults to per_device_batch_size.",
     )
     max_corpus_chars: int = Field(
