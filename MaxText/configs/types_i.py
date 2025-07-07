@@ -14,7 +14,7 @@
 
 """Pydantic models and loader for MaxText configuration."""
 import os
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union, Literal
 
 import jax
 import yaml
@@ -231,8 +231,9 @@ class AttentionConfig(BaseModel):
 class RoPEConfig(BaseModel):
     """Configuration for Rotary Positional Embeddings."""
 
-    rope_type: str = Field(
-        "default", description="Type of RoPE ('default', 'yarn', 'llama3.1')."
+    rope_type: Literal["default", "llama3.1", "yarn"] = Field(
+        "default",
+        description="Type of RoPE ('default', 'yarn', 'llama3.1').",
     )
     rope_max_timescale: int = Field(10_000, description="Maximum timescale for RoPE.")
     rope_use_scale: bool = Field(True, description="Apply RoPE scaling for Llama 3.1.")
@@ -343,7 +344,9 @@ class TrainingConfig(BaseModel):
     opt_type: str = Field(
         "adamw", description="Optimizer type ('adamw', 'adam_pax', 'sgd')."
     )
-    adam_b1: float = Field(0.9, description="Adam optimizer beta1 parameter.")
+    adam_b1: float = Field(
+        0.9, ge=0.0, le=1.0, description="Adam optimizer beta1 parameter."
+    )
     adam_b2: float = Field(0.95, description="Adam optimizer beta2 parameter.")
     adam_weight_decay: float = Field(0.1, description="AdamW weight decay.")
     remat_policy: str = Field("full", description="Rematerialization policy.")

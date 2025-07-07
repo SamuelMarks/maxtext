@@ -33,9 +33,8 @@ import jax.numpy as jnp
 from flax.core import freeze
 
 from MaxText import maxtext_utils
-from MaxText import pyconfig
 from MaxText.common_types import DECODING_ACTIVE_SEQUENCE_INDICATOR, MODEL_MODE_AUTOREGRESSIVE, MODEL_MODE_PREFILL, MODEL_MODE_TRAIN
-from MaxText.configs import types_i
+from MaxText.configs import types_j
 from MaxText.globals import PKG_DIR
 from MaxText.layers import attentions
 from MaxText.layers.attentions import Attention, MLA, ChunkedCausalMask
@@ -282,13 +281,13 @@ class AttentionTest(unittest.TestCase):
 
   def setUp(self):
     super().setUp()
-    config = types_i.initialize(
+    config = types_j.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         **self.config_arguments,
     )
     self.cfg = config
 
-    config_cp = types_i.initialize(
+    config_cp = types_j.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         **self.config_arguments,
         ici_context_parallelism=4,  # use context parallelism of 4
@@ -631,7 +630,7 @@ class AttentionTest(unittest.TestCase):
 
     rtol, atol = 1e-02, 1e-02
 
-    config = types_i.initialize(
+    config = types_j.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         per_device_batch_size=1.0,
         run_name="test",
@@ -731,7 +730,7 @@ class AttentionTest(unittest.TestCase):
 
     rtol, atol = 1e-02, 1e-02
 
-    config = types_i.initialize(
+    config = types_j.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         per_device_batch_size=1.0,
         run_name="test",
@@ -1020,7 +1019,7 @@ class MLATest(parameterized.TestCase):
 
   def init_mla(self, rope_type):
     """Helper function to initialize MLA with different model names."""
-    cfg = types_i.initialize(
+    cfg = types_j.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         per_device_batch_size=1.0,
         run_name="test",
