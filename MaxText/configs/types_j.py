@@ -20,7 +20,10 @@
 import os
 import sys
 from enum import Enum
+from tempfile import gettempdir
 from typing import Any, Dict, List, Literal, Optional, NewType, Union
+
+import jax
 
 import yaml
 
@@ -34,13 +37,14 @@ from pydantic import (
     ValidationError,
 )
 
+from MaxText.common_types import DecoderBlockType
 from MaxText.globals import PKG_DIR
 
 # ----------------------------------------------------------------------------
 # Reusable Enums and Type Aliases
 # ----------------------------------------------------------------------------
 
-PathStr = NewType("PathStr", str)
+PathStr = str
 AxisNames = NewType("AxisNames", str)
 
 
@@ -152,8 +156,8 @@ class RunInfo(BaseModel):
     base_output_directory: PathStr = Field(
         "", description="Base directory for all outputs, typically a GCS path."
     )
-    sharding_strategy: str = Field(
-        "",
+    sharding_strategy: Optional[str] = Field(
+        None,
         description="Experimental sharding strategy used for some inference configs.",
     )
 
@@ -331,8 +335,9 @@ class Logits(BaseModel):
     cast_logits_to_fp32: bool = Field(
         True, description="Whether to cast the final logits to fp32."
     )
-    final_logits_soft_cap: NonNegativeFloat = Field(
-        0.0, description="Soft-cap value for the final logits. 0.0 means no cap."
+    final_logits_soft_cap: Optional[NonNegativeFloat] = Field(
+        None,
+        description="Soft-cap value for the final logits. None or 0.0 means no cap.",
     )
 
 
@@ -359,8 +364,8 @@ class Attention(BaseModel):
     chunk_attn_window_size: NonNegativeInt = Field(
         0, description="The window size for chunked attention."
     )
-    attn_logits_soft_cap: NonNegativeFloat = Field(
-        0.0, description="Soft-cap value for attention logits."
+    attn_logits_soft_cap: Optional[NonNegativeFloat] = Field(
+        None, description="Soft-cap value for attention logits. None means no cap."
     )
     use_post_attn_norm: bool = Field(
         False, description="Apply LayerNorm after the attention block."
@@ -770,7 +775,8 @@ class Tokenizer(BaseModel):
 
     vocab_size: int = Field(32_000, description="The size of the vocabulary.")
     tokenizer_path: PathStr = Field(
-        "assets/tokenizer.llama2", description="Path to the tokenizer model file."
+        os.path.join("assets", "tokenizer.llama2"),
+        description="Path to the tokenizer model file.",
     )
     tokenizer_type: TokenizerType = Field(
         TokenizerType.SENTENCEPIECE, description="The type of tokenizer."
@@ -796,9 +802,11 @@ class DatasetGeneral(BaseModel):
     dataset_type: DatasetType = Field(
         DatasetType.TFDS, description="The type of the data loading pipeline."
     )
-    per_device_batch_size: int = Field(12, description="The batch size per device.")
-    eval_per_device_batch_size: int = Field(
-        0,
+    per_device_batch_size: Union[int, float] = Field(
+        12, description="The batch size per device."
+    )
+    eval_per_device_batch_size: Union[int, float] = Field(
+        0.0,
         description="The batch size per device for evaluation. Defaults to per_device_batch_size.",
     )
     max_corpus_chars: int = Field(
@@ -846,7 +854,9 @@ class HfDataset(BaseModel):
     hf_train_files: str = Field("", description="Files for the HF training split.")
     hf_eval_split: str = Field("", description="Name of the HF evaluation split.")
     hf_eval_files: str = Field("", description="Files for the HF evaluation split.")
-    hf_access_token: str = Field("", description="Hugging Face API access token.")
+    hf_access_token: Optional[str] = Field(
+        None, description="Hugging Face API access token."
+    )
 
 
 class GrainDataset(BaseModel):
@@ -877,11 +887,13 @@ class FineTuning(BaseModel):
     sft_train_on_completion_only: bool = Field(
         False, description="If True, trains only on the completion part of the text."
     )
-    use_grpo: bool = Field(
-        False, description="If True, enables Group Relative Policy Optimization."
+    use_grpo: Optional[bool] = Field(
+        None, description="If True, enables Group Relative Policy Optimization."
     )
-    grpo_beta: float = Field(0.04, description="Beta parameter for GRPO.")
-    num_generations: int = Field(4, description="Number of generations for GRPO.")
+    grpo_beta: Optional[float] = Field(None, description="Beta parameter for GRPO.")
+    num_generations: Optional[int] = Field(
+        None, description="Number of generations for GRPO."
+    )
 
 
 class TrainingLoop(BaseModel):
@@ -1070,8 +1082,8 @@ class Decoding(BaseModel):
     decode_sampling_strategy: SamplingStrategy = Field(
         SamplingStrategy.GREEDY, description="The strategy for decoding."
     )
-    decode_sampling_nucleus_p: float = Field(
-        -1, description="Nucleus (top-p) sampling probability. -1 to disable."
+    decode_sampling_nucleus_p: Union[float, int] = Field(
+        -1.0, description="Nucleus (top-p) sampling probability. -1 to disable."
     )
     decode_sampling_top_k: int = Field(
         0, description="Top-k sampling value. 0 to disable."
@@ -1165,8 +1177,12 @@ class AOT(BaseModel):
 class DevelopmentAndDebugging(BaseModel):
     """General settings for development and debugging."""
 
+    constant_bound_config: Optional[List] = Field(
+        None, description="Legacy configuration for constant bounds."
+    )
     jax_cache_dir: PathStr = Field(
-        "~/jax_cache", description="Directory for JAX compilation cache."
+        os.path.join(os.path.expanduser("~"), "jax_cache"),
+        description="Directory for JAX compilation cache.",
     )
     jax_distributed_initialization_timeout: int = Field(
         300, description="Timeout for jax.distributed.initialize."
@@ -1222,7 +1238,8 @@ class HloDump(BaseModel):
         -1, description="Dump HLO at a specific step. -1 disables step-specific dump."
     )
     dump_hlo_local_dir: PathStr = Field(
-        "/tmp/xla_dump/", description="Local directory to dump HLO."
+        os.path.join(gettempdir(), "xla_dump", ""),
+        description="Local directory to dump HLO.",
     )
     dump_hlo_delete_local_after: bool = Field(
         True, description="Delete local HLO dump after uploading to GCS."
@@ -1391,6 +1408,90 @@ class VisionProjector(BaseModel):
     )
 
 
+class DerivedValues(BaseModel):
+    """Holds all fields that are derived from other config values for perfect legacy compatibility."""
+
+    emb_dim: Optional[int] = Field(
+        None,
+        description="Effective embedding dimension, scaled by `global_parameter_scale`.",
+    )
+    mlp_dim: Optional[int] = Field(
+        None, description="Effective MLP dimension, scaled by `global_parameter_scale`."
+    )
+    moe_mlp_dim: Optional[int] = Field(
+        None,
+        description="Effective MLP dimension for MoE layers, scaled by `global_parameter_scale`.",
+    )
+    num_decoder_layers: Optional[int] = Field(
+        None,
+        description="Effective number of decoder layers, scaled by `global_parameter_scale`.",
+    )
+    num_kv_heads: Optional[int] = Field(
+        None,
+        description="Effective number of key/value heads, scaled by `global_parameter_scale`.",
+    )
+    num_query_heads: Optional[int] = Field(
+        None,
+        description="Effective number of query heads, scaled by `global_parameter_scale`.",
+    )
+
+    ici_parallelism: Optional[List[int]] = Field(
+        None,
+        description="Aggregated list of all ICI parallelism values for legacy compatibility.",
+    )
+    dcn_parallelism: Optional[List[int]] = Field(
+        None,
+        description="Aggregated list of all DCN parallelism values for legacy compatibility.",
+    )
+
+    using_pipeline_parallelism: Optional[bool] = Field(
+        None,
+        description="Boolean flag indicating if pipeline parallelism is active across ICI or DCN.",
+    )
+    model_fsdp_ag_once: Optional[bool] = Field(
+        None,
+        description="An alias for `pipeline_fsdp_ag_once` for backward compatibility.",
+    )
+
+    global_batch_size_to_train_on: Optional[int] = Field(
+        None,
+        description="The total batch size for training across all devices. Derived from `per_device_batch_size` and data parallelism.",
+    )
+    global_batch_size_to_eval_on: Optional[int] = Field(
+        None,
+        description="The total batch size for evaluation across all devices. Derived from `eval_per_device_batch_size` and data parallelism.",
+    )
+    global_batch_size_to_load: Optional[int] = Field(
+        None,
+        description="The global batch size for the training dataloader, potentially scaled by `expansion_factor_real_data`.",
+    )
+    global_batch_size_to_load_eval: Optional[int] = Field(
+        None,
+        description="The global batch size for the evaluation dataloader, potentially scaled by `expansion_factor_real_data`.",
+    )
+    micro_batch_size_to_train_on: Optional[int] = Field(
+        None,
+        description="The size of each micro-batch for training, used in pipeline parallelism. Derived from `global_batch_size_to_train_on`.",
+    )
+    micro_batch_size_to_eval_on: Optional[int] = Field(
+        None,
+        description="The size of each micro-batch for evaluation, used in pipeline parallelism. Derived from `global_batch_size_to_eval_on`.",
+    )
+
+    checkpoint_dir: Optional[str] = Field(
+        None,
+        description="The full path to the checkpoint directory, derived from `run_name`.",
+    )
+    metrics_dir: Optional[str] = Field(
+        None,
+        description="The full path to the metrics directory, derived from `run_name`.",
+    )
+    tensorboard_dir: Optional[str] = Field(
+        None,
+        description="The full path to the tensorboard directory, derived from `run_name`.",
+    )
+
+
 # ----------------------------------------------------------------------------
 # Main Config Class
 # ----------------------------------------------------------------------------
@@ -1462,6 +1563,8 @@ class MaxTextConfig(
     MultimodalGeneral,
     VisionTower,
     VisionProjector,
+    # Derived
+    DerivedValues,
 ):
     """
     The main configuration object for MaxText.
@@ -1476,18 +1579,145 @@ class MaxTextConfig(
         protected_namespaces = ()
 
     @model_validator(mode="after")
-    def set_derived_values(self) -> "Config":
-        """Sets configuration values that are derived from other values post-validation."""
+    def set_derived_values(self) -> "MaxTextConfig":
+        """
+        Computes derived values and aliases after initial validation to perfectly
+        replicate the post-processing logic of the legacy configuration system.
+        """
+        # A. Set primary dependencies first
         if self.learning_rate_schedule_steps == -1:
             self.learning_rate_schedule_steps = self.steps
         if self.eval_per_device_batch_size == 0.0:
             self.eval_per_device_batch_size = self.per_device_batch_size
+        if not self.mu_dtype:
+            self.mu_dtype = self.weight_dtype
+
+        # B. Calculate data parallelism
+        dcn_dp = self.dcn_data_parallelism if self.dcn_data_parallelism > 0 else 1
+        ici_dp = self.ici_data_parallelism if self.ici_data_parallelism > 0 else 1
+        data_parallelism = dcn_dp * ici_dp
+
+        # C. Calculate batch sizes with explicit int casting
+        self.global_batch_size_to_train_on = int(
+            self.per_device_batch_size * data_parallelism
+        )
+        self.global_batch_size_to_eval_on = int(
+            self.eval_per_device_batch_size * data_parallelism
+        )
+        real_data_factor = (
+            self.expansion_factor_real_data
+            if self.expansion_factor_real_data > 0
+            else 1
+        )
+        self.global_batch_size_to_load = int(
+            self.global_batch_size_to_train_on * real_data_factor
+        )
+        self.global_batch_size_to_load_eval = int(
+            self.global_batch_size_to_eval_on * real_data_factor
+        )
+        microbatches = (
+            self.num_pipeline_microbatches if self.num_pipeline_microbatches > 0 else 1
+        )
+        self.micro_batch_size_to_train_on = int(
+            self.global_batch_size_to_train_on / microbatches
+        )
+        self.micro_batch_size_to_eval_on = int(
+            self.global_batch_size_to_eval_on / microbatches
+        )
+
+        # D. Set all other derived fields
+        self.constant_bound_config = []
+        self.emb_dim = self.base_emb_dim * self.global_parameter_scale
+        self.mlp_dim = self.base_mlp_dim * self.global_parameter_scale
+        self.moe_mlp_dim = self.base_moe_mlp_dim * self.global_parameter_scale
+        self.num_decoder_layers = (
+            self.base_num_decoder_layers * self.global_parameter_scale
+        )
+        self.num_kv_heads = self.base_num_kv_heads * self.global_parameter_scale
+        self.num_query_heads = self.base_num_query_heads * self.global_parameter_scale
+        if self.quantization_local_shard_count == -1:
+            self.quantization_local_shard_count = jax.local_device_count()
+        if self.num_slices == -1:
+            self.num_slices = len(jax.devices()) // jax.local_device_count()
+        self.ici_parallelism = [
+            self.ici_data_parallelism,
+            self.ici_pipeline_parallelism,
+            self.ici_fsdp_parallelism,
+            self.ici_tensor_parallelism,
+            self.ici_sequence_parallelism,
+            self.ici_context_parallelism,
+            self.ici_autoregressive_parallelism,
+            self.ici_expert_parallelism,
+            self.ici_fsdp_transpose_parallelism,
+            self.ici_tensor_transpose_parallelism,
+            self.ici_tensor_sequence_parallelism,
+            self.ici_context_autoregressive_parallelism,
+        ]
+        self.dcn_parallelism = [
+            self.dcn_data_parallelism,
+            self.dcn_pipeline_parallelism,
+            self.dcn_fsdp_parallelism,
+            self.dcn_tensor_parallelism,
+            self.dcn_sequence_parallelism,
+            self.dcn_context_parallelism,
+            self.dcn_autoregressive_parallelism,
+            self.dcn_expert_parallelism,
+            self.dcn_fsdp_transpose_parallelism,
+            self.dcn_tensor_transpose_parallelism,
+            self.dcn_tensor_sequence_parallelism,
+            self.dcn_context_autoregressive_parallelism,
+        ]
+        self.using_pipeline_parallelism = (
+            self.ici_pipeline_parallelism > 1 or self.dcn_pipeline_parallelism > 1
+        )
+        self.model_fsdp_ag_once = self.pipeline_fsdp_ag_once
+        if self.run_name:
+            output_dir = os.path.join(self.base_output_directory, self.run_name)
+            self.checkpoint_dir = os.path.join(output_dir, "checkpoints") + "/"
+            self.metrics_dir = os.path.join(output_dir, "metrics") + "/"
+            self.tensorboard_dir = os.path.join(output_dir, "tensorboard") + "/"
+        else:
+            self.checkpoint_dir, self.metrics_dir, self.tensorboard_dir = (
+                None,
+                None,
+                None,
+            )
+        if self.pagedattn_max_pages_per_group == -1:
+            self.pagedattn_max_pages_per_group = (
+                self.max_target_length // self.pagedattn_tokens_per_page
+            )
+
+        # E. Final cosmetic fixes for perfect legacy serialization
+        if self.decoder_block.islower():
+            self.decoder_block = f"DecoderBlockType.{str(DecoderBlockType[self.decoder_block.upper()]).upper()}"
+        if self.final_logits_soft_cap == 0.0:
+            self.final_logits_soft_cap = None
+        if self.attn_logits_soft_cap == 0.0:
+            self.attn_logits_soft_cap = None
+        if self.hf_access_token == "":
+            self.hf_access_token = None
+        if self.decode_sampling_nucleus_p == -1.0:
+            self.decode_sampling_nucleus_p = -1
+        if (
+            self.per_device_batch_size is not None
+            and self.per_device_batch_size == int(self.per_device_batch_size)
+        ):
+            self.per_device_batch_size = int(self.per_device_batch_size)
+        if (
+            self.eval_per_device_batch_size is not None
+            and self.eval_per_device_batch_size == int(self.eval_per_device_batch_size)
+        ):
+            self.eval_per_device_batch_size = int(self.eval_per_device_batch_size)
+
         return self
 
 
 # ----------------------------------------------------------------------------
 # Initialization Logic (No Global State)
 # ----------------------------------------------------------------------------
+
+#        if self.decoder_block.islower():
+#            self.decoder_block = f"DecoderBlockType.{str(DecoderBlockType[self.decoder_block.upper()]).upper()}"
 
 
 def _load_and_merge_yamls(
@@ -1623,7 +1853,7 @@ def initialize(argv: List[str], **kwargs) -> MaxTextConfig:
     # Log the final configuration if requested
     if config_instance.log_config:
         print("\nFinal Configuration:", file=sys.stderr)
-        config_dict = config_instance.model_dump()
+        config_dict = config_instance.model_dump(mode="json")  # exclude_none=True,
         print(
             yaml.dump(config_dict, sort_keys=False, default_flow_style=False, indent=2),
             file=sys.stderr,

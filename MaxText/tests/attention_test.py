@@ -35,11 +35,12 @@ from flax.core import freeze
 from MaxText import maxtext_utils
 from MaxText.common_types import DECODING_ACTIVE_SEQUENCE_INDICATOR, MODEL_MODE_AUTOREGRESSIVE, MODEL_MODE_PREFILL, MODEL_MODE_TRAIN
 from MaxText.configs import types_j
-from MaxText.globals import PKG_DIR, has_tpu
+from MaxText.globals import PKG_DIR, has_tpu, has_gpu, get_devices
 from MaxText.layers import attentions
 from MaxText.layers.attentions import Attention, MLA, ChunkedCausalMask
 
 tpu_present = has_tpu()
+cpu_only = not tpu_present and not has_gpu()
 
 class BidirectionalBlockMaskTest(unittest.TestCase):
   """Test for make_bidirectional_block_mask."""
@@ -299,7 +300,7 @@ class AttentionTest(unittest.TestCase):
     self.cfg_cp = config_cp
     self.rng = jax.random.PRNGKey(0)
 
-    if jax.devices()[0].platform == "cpu":
+    if cpu_only:
         self.cfg_cp.mesh_axes = self.cfg.mesh_axes = ["data"]
         self.cfg_cp.scan_layers = self.cfg.scan_layers = False
 

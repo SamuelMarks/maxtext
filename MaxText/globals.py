@@ -23,8 +23,19 @@ EPS = 1e-8  # Epsilon to calculate loss
 DEFAULT_OCDBT_TARGET_DATA_FILE_SIZE = 2 * 1024**3  # Default checkpoint file size
 
 devices = []
+
+
+def has_cpu():
+    return any(device.platform == "cpu" for device in get_devices())
+
+
+def has_gpu():
+    return any(device.platform == "gpu" for device in get_devices())
+
+
 def has_tpu():
-    return any(device.platform == 'tpu' for device in get_devices())
+    return any(device.platform == "tpu" for device in get_devices())
+
 
 def get_devices():
     global devices
@@ -33,4 +44,10 @@ def get_devices():
     return devices
 
 
-__all__ = ["DEFAULT_OCDBT_TARGET_DATA_FILE_SIZE", "EPS", "PKG_DIR", "get_devices", "has_tpu"]
+__all__ = [
+    "DEFAULT_OCDBT_TARGET_DATA_FILE_SIZE",
+    "EPS",
+    "PKG_DIR",
+    "has_gpu",
+    "has_tpu",
+]

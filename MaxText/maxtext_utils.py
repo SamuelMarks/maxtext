@@ -928,8 +928,6 @@ def create_device_mesh_with_maxtextconfig(config: MaxTextConfig, devices=None):
       [config.ici_fsdp_parallelism], num_devices_per_slice, "ICI"
   )
 
-  import rich
-  rich.print(config)
   allow_split_physical_axes = (
       config.allow_split_physical_axes if config.allow_split_physical_axes else False
   )
