@@ -35,6 +35,7 @@ from pydantic import (
     PositiveInt,
     model_validator,
     ValidationError,
+    field_validator,
 )
 
 from MaxText.common_types import DecoderBlockType
@@ -1177,7 +1178,7 @@ class AOT(BaseModel):
 class DevelopmentAndDebugging(BaseModel):
     """General settings for development and debugging."""
 
-    constant_bound_config: Optional[List] = Field(
+    constant_bound_config: list = Field(
         None, description="Legacy configuration for constant bounds."
     )
     jax_cache_dir: PathStr = Field(
@@ -1203,6 +1204,14 @@ class DevelopmentAndDebugging(BaseModel):
         False,
         description="If True, perform extra checks using jax.checkify, affecting performance.",
     )
+
+    @field_validator("constant_bound_config", mode="before")
+    @classmethod
+    def _clean_empty_string_for_list(cls, v: Any) -> Any:
+        """Coerces an empty string from YAML into an empty list before validation."""
+        if v == "":
+            return []
+        return v
 
 
 class Profiling(BaseModel):
@@ -1604,6 +1613,7 @@ class MaxTextConfig(
         self.global_batch_size_to_eval_on = int(
             self.eval_per_device_batch_size * data_parallelism
         )
+
         real_data_factor = (
             self.expansion_factor_real_data
             if self.expansion_factor_real_data > 0
@@ -1615,6 +1625,7 @@ class MaxTextConfig(
         self.global_batch_size_to_load_eval = int(
             self.global_batch_size_to_eval_on * real_data_factor
         )
+
         microbatches = (
             self.num_pipeline_microbatches if self.num_pipeline_microbatches > 0 else 1
         )
@@ -1626,7 +1637,6 @@ class MaxTextConfig(
         )
 
         # D. Set all other derived fields
-        self.constant_bound_config = []
         self.emb_dim = self.base_emb_dim * self.global_parameter_scale
         self.mlp_dim = self.base_mlp_dim * self.global_parameter_scale
         self.moe_mlp_dim = self.base_moe_mlp_dim * self.global_parameter_scale
@@ -1635,10 +1645,12 @@ class MaxTextConfig(
         )
         self.num_kv_heads = self.base_num_kv_heads * self.global_parameter_scale
         self.num_query_heads = self.base_num_query_heads * self.global_parameter_scale
+
         if self.quantization_local_shard_count == -1:
             self.quantization_local_shard_count = jax.local_device_count()
         if self.num_slices == -1:
             self.num_slices = len(jax.devices()) // jax.local_device_count()
+
         self.ici_parallelism = [
             self.ici_data_parallelism,
             self.ici_pipeline_parallelism,
@@ -1671,6 +1683,7 @@ class MaxTextConfig(
             self.ici_pipeline_parallelism > 1 or self.dcn_pipeline_parallelism > 1
         )
         self.model_fsdp_ag_once = self.pipeline_fsdp_ag_once
+
         if self.run_name:
             output_dir = os.path.join(self.base_output_directory, self.run_name)
             self.checkpoint_dir = os.path.join(output_dir, "checkpoints") + "/"
@@ -1682,6 +1695,7 @@ class MaxTextConfig(
                 None,
                 None,
             )
+
         if self.pagedattn_max_pages_per_group == -1:
             self.pagedattn_max_pages_per_group = (
                 self.max_target_length // self.pagedattn_tokens_per_page
@@ -1689,7 +1703,10 @@ class MaxTextConfig(
 
         # E. Final cosmetic fixes for perfect legacy serialization
         if self.decoder_block.islower():
-            self.decoder_block = f"DecoderBlockType.{str(DecoderBlockType[self.decoder_block.upper()]).upper()}"
+            self.decoder_block = (
+                f"{DecoderBlockType.__name__}"
+                f".{str(DecoderBlockType[self.decoder_block.upper()]).upper()}"
+            )
         if self.final_logits_soft_cap == 0.0:
             self.final_logits_soft_cap = None
         if self.attn_logits_soft_cap == 0.0:
@@ -1698,6 +1715,8 @@ class MaxTextConfig(
             self.hf_access_token = None
         if self.decode_sampling_nucleus_p == -1.0:
             self.decode_sampling_nucleus_p = -1
+
+        # Final type casting to match legacy system's output
         if (
             self.per_device_batch_size is not None
             and self.per_device_batch_size == int(self.per_device_batch_size)
@@ -1715,9 +1734,6 @@ class MaxTextConfig(
 # ----------------------------------------------------------------------------
 # Initialization Logic (No Global State)
 # ----------------------------------------------------------------------------
-
-#        if self.decoder_block.islower():
-#            self.decoder_block = f"DecoderBlockType.{str(DecoderBlockType[self.decoder_block.upper()]).upper()}"
 
 
 def _load_and_merge_yamls(
