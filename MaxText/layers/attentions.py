@@ -52,6 +52,7 @@ from MaxText.inference import paged_attention
 from MaxText.inference.kvcache import KVQuant, KVTensor
 from MaxText.kernels.ragged_attention import ragged_gqa
 from MaxText.kernels.ragged_attention import ragged_mha
+from MaxText.layers import nnx_wrappers
 from MaxText.layers.embeddings import (
     llama_rotary_embedding_as_linen,
     llama_vision_rotary_embedding_as_linen,
@@ -298,39 +299,39 @@ def attention_op_as_linen(
   """
   Initializes the AttentionOp module and returns it as a Linen module.
   """
-  return nnx.bridge.to_linen(
-    AttentionOp,
-    config=config,
-    mesh=mesh,
-    attention_kernel=attention_kernel,
-    max_target_length=max_target_length,
-    num_query_heads=num_query_heads,
-    num_kv_heads=num_kv_heads,
-    float32_qk_product=float32_qk_product,
-    max_prefill_predict_length=max_prefill_predict_length,
-    float32_logits=float32_logits,
-    flash_axis_names_kv=flash_axis_names_kv,
-    flash_axis_names_q=flash_axis_names_q,
-    flash_axis_names_splash_kernel=flash_axis_names_splash_kernel,
-    prefill_cache_logical_axis_names=prefill_cache_logical_axis_names,
-    cache_logical_axis_names=cache_logical_axis_names,
-    cache_scale_logical_axis_names=cache_scale_logical_axis_names,
-    ragged_qkv_axis_names=ragged_qkv_axis_names,
-    ragged_lengths_names=ragged_lengths_names,
-    compute_axis_order=compute_axis_order,
-    key_axis_order=key_axis_order,
-    reshape_q=reshape_q,
-    dropout_rate=dropout_rate,
-    dtype=dtype,
-    quant=quant,
-    kv_quant=kv_quant,
-    attention_type=attention_type,
-    attn_logits_soft_cap=attn_logits_soft_cap,
-    sliding_window_size=sliding_window_size,
-    chunk_attn_window_size=chunk_attn_window_size,
-    use_ragged_attention=use_ragged_attention,
-    ragged_block_size=ragged_block_size,
-    metadata_fn=variable_to_logically_partitioned,
+  return nnx_wrappers.to_linen(
+      AttentionOp,
+      config=config,
+      mesh=mesh,
+      attention_kernel=attention_kernel,
+      max_target_length=max_target_length,
+      num_query_heads=num_query_heads,
+      num_kv_heads=num_kv_heads,
+      float32_qk_product=float32_qk_product,
+      max_prefill_predict_length=max_prefill_predict_length,
+      float32_logits=float32_logits,
+      flash_axis_names_kv=flash_axis_names_kv,
+      flash_axis_names_q=flash_axis_names_q,
+      flash_axis_names_splash_kernel=flash_axis_names_splash_kernel,
+      prefill_cache_logical_axis_names=prefill_cache_logical_axis_names,
+      cache_logical_axis_names=cache_logical_axis_names,
+      cache_scale_logical_axis_names=cache_scale_logical_axis_names,
+      ragged_qkv_axis_names=ragged_qkv_axis_names,
+      ragged_lengths_names=ragged_lengths_names,
+      compute_axis_order=compute_axis_order,
+      key_axis_order=key_axis_order,
+      reshape_q=reshape_q,
+      dropout_rate=dropout_rate,
+      dtype=dtype,
+      quant=quant,
+      kv_quant=kv_quant,
+      attention_type=attention_type,
+      attn_logits_soft_cap=attn_logits_soft_cap,
+      sliding_window_size=sliding_window_size,
+      chunk_attn_window_size=chunk_attn_window_size,
+      use_ragged_attention=use_ragged_attention,
+      ragged_block_size=ragged_block_size,
+      metadata_fn=variable_to_logically_partitioned,
   )
 
 
@@ -370,7 +371,7 @@ class AttentionOp(nnx.Module):
   use_ragged_attention: bool = False
   ragged_block_size: int = 256
 
-  rngs: nnx.Rngs = None # Not used in AttentionOp but passed in by nnx.bridge.to_linen
+  rngs: nnx.Rngs = None  # Not used in AttentionOp but passed in by nnx.bridge.to_linen
 
   def check_attention_inputs(self, query: Array, key: Array | KVTensor, value: Array | KVTensor) -> None:
     """Check attention inputs."""
@@ -1331,7 +1332,7 @@ def l2_norm_as_linen(self, eps: float = 1e-6):
   Args:
     eps: float, epsilon used for numerical stability (default value should be ok for most cases).
   """
-  return nnx.bridge.to_linen(L2Norm, eps=eps, metadata_fn=variable_to_logically_partitioned)
+  return nnx_wrappers.to_linen(L2Norm, eps=eps, metadata_fn=variable_to_logically_partitioned)
 
 
 def variable_to_logically_partitioned(variable: nnx.VariableState):
@@ -1463,7 +1464,7 @@ class Attention(nn.Module):
     # When paged attention is enabled, paged attention op is used for all model modes except TRAIN,
     # which uses default attention op.
     if self.config.attention == "paged":
-      self.paged_attention_op = paged_attention.PagedAttentionOp(
+      self.paged_attention_op = paged_attention.paged_attention_op_as_linen(
           mesh=self.mesh,
           num_pages=self.config.pagedattn_num_pages,
           tokens_per_page=self.config.pagedattn_tokens_per_page,
@@ -1940,7 +1941,7 @@ class MLA(Attention):
       if self.config.pagedattn_head_dim_alignment > 0:
         alignment = self.config.pagedattn_head_dim_alignment
         head_dim = (head_dim + alignment - 1) // alignment * alignment
-      self.ds_paged_attention_op = paged_attention.PagedAttentionOp(
+      self.ds_paged_attention_op = paged_attention.paged_attention_op_as_linen(
           mesh=self.mesh,
           num_pages=self.config.pagedattn_num_pages,
           tokens_per_page=self.config.pagedattn_tokens_per_page,

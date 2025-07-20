@@ -57,6 +57,7 @@ class MetricLogger:
     self.performance_metric_queue = self.get_performance_metric_queue(config)
     self.learning_rate_schedule = learning_rate_schedule
     self.cumulative_eval_metrics = {"scalar": defaultdict(float)}
+    self.buffered_train_metrics = None
 
   def write_metrics(self, metrics, step, is_training=True):
     """Entry point for all metrics writing in Train's Main."""
@@ -74,21 +75,39 @@ class MetricLogger:
 
   def log_metrics(self, metrics, step, is_training):
     """Logs metrics via max_logging."""
+
     if is_training:
-      max_logging.log(
+      loss = metrics['scalar']['learning/loss']
+      log_message = (
           f"completed step: {step}, seconds: {metrics['scalar']['perf/step_time_seconds']:.3f}, "
           f"TFLOP/s/device: {metrics['scalar']['perf/per_device_tflops_per_sec']:.3f}, "
           f"Tokens/s/device: {metrics['scalar']['perf/per_device_tokens_per_sec']:.3f}, "
           f"total_weights: {metrics['scalar']['learning/total_weights']}, "
-          f"loss: {metrics['scalar']['learning/loss']:.3f}"
+          f"loss: {loss:.3f}"
       )
+
+      if self.config.mtp_num_layers > 0:
+        mtp_loss = metrics["scalar"].get("learning/mtp_loss", 0.0)
+        main_model_loss = loss - mtp_loss
+        log_message += f", main_model_loss: {main_model_loss:.3f}, mtp_loss: {mtp_loss:.3f}"
+
+      max_logging.log(log_message)
+
     else:
-      max_logging.log(
+      log_message = (
           f"eval metrics after step: {step},"
           f" loss={self.cumulative_eval_metrics['scalar']['eval/avg_loss']:.3f},"
           f" total_weights={self.cumulative_eval_metrics['scalar']['eval/total_weights']},"
           f" step_time_seconds={self.cumulative_eval_metrics['scalar']['eval/step_time_seconds']:.3f}"
       )
+
+      if self.config.mtp_num_layers > 0:
+        log_message += (
+            f", avg_mtp_loss={self.cumulative_eval_metrics['scalar']['eval/avg_mtp_loss']:.3f},"
+            f" avg_mtp_acceptance_rate={self.cumulative_eval_metrics['scalar']['eval/avg_mtp_acceptance_rate_percent']:.2f}%"
+        )
+
+      max_logging.log(log_message)
 
   def write_metrics_locally(self, metrics, step):
     """Writes metrics locally for testing."""
@@ -153,8 +172,22 @@ class MetricLogger:
         gcp_workload_monitor.start_performance_reporting_thread(performance_metric_queue)
     return performance_metric_queue
 
+  def buffer_and_write_train_metrics(self, metrics, step, step_time_delta):
+    """
+    Buffers metrics for the current training step and simultaneously writes the training metrics
+    for the previous step to GCS and/or TensorBoard. This buffering strategy allows for back-to-back
+    execution of training steps, by overlapping data loading for step n with the execution of step n−1.
+    This significantly boosts training efficiency.
+    """
+    if self.buffered_train_metrics is not None:
+      (step_to_write, metrics_to_write) = self.buffered_train_metrics
+      self.write_metrics(metrics_to_write, step_to_write)
+
+    self.record_train_metrics(metrics, step, step_time_delta)
+    self.buffered_train_metrics = (step, metrics)
+
   def record_train_metrics(self, metrics, step, step_time_delta):
-    """Records training metrics and writes the metrics to GCS and/or to TensorBoard."""
+    """Records training metrics for the current step."""
     metrics["scalar"].update({"perf/step_time_seconds": step_time_delta.total_seconds()})
     metrics["scalar"].update({"perf/per_device_tflops": self.metadata["per_device_tflops"]})
     metrics["scalar"].update(
@@ -168,8 +201,6 @@ class MetricLogger:
     if self.performance_metric_queue:
       self.performance_metric_queue.put(step_time_delta.total_seconds())
 
-    self.write_metrics(metrics, step)
-
   def record_eval_metrics(self, step, metrics=None, eval_step_count=None):
     """Records eval metrics and writes the metrics to GCS and/or to TensorBoard."""
     if metrics:
@@ -179,6 +210,10 @@ class MetricLogger:
       )
       self.cumulative_eval_metrics["scalar"]["eval/moe_lb_loss"] += float(
           metrics["scalar"].get("evaluation/moe_lb_loss", 0.0)
+      )
+      self.cumulative_eval_metrics["scalar"]["eval/mtp_loss"] += float(metrics["scalar"].get("evaluation/mtp_loss", 0.0))
+      self.cumulative_eval_metrics["scalar"]["eval/mtp_acceptance_rate_percent"] += float(
+          metrics["scalar"].get("evaluation/mtp_acceptance_rate_percent", 0.0)
       )
       if self.config.use_dpo:
         self.cumulative_eval_metrics["scalar"]["eval/dpo_reward_accuracy"] += float(
@@ -193,6 +228,12 @@ class MetricLogger:
       self.cumulative_eval_metrics["scalar"]["eval/avg_moe_lb_loss"] = (
           self.cumulative_eval_metrics["scalar"]["eval/moe_lb_loss"] / eval_step_count
       )
+      self.cumulative_eval_metrics["scalar"]["eval/avg_mtp_loss"] = (
+          self.cumulative_eval_metrics["scalar"]["eval/mtp_loss"] / eval_step_count
+      )
+      self.cumulative_eval_metrics["scalar"]["eval/avg_mtp_acceptance_rate_percent"] = (
+          self.cumulative_eval_metrics["scalar"]["eval/mtp_acceptance_rate_percent"] / eval_step_count
+      )
       if self.config.use_dpo:
         self.cumulative_eval_metrics["scalar"]["eval/dpo_reward_accuracy"] = (
             self.cumulative_eval_metrics["scalar"]["eval/dpo_reward_accuracy"] / eval_step_count
@@ -200,11 +241,15 @@ class MetricLogger:
 
       self.write_metrics(self.cumulative_eval_metrics, step, is_training=False)
 
-  def cleanup(self):
+  def flush_metrics_and_cleanup(self):
     """
-    This is a terminal operation. Once called, the logger instance should
-    not be used to add or write more metrics as the underlying writer
-    objects (e.g., TensorBoard SummaryWriter) will be closed.
+    This is a terminal operation that uploads any buffered metrics to GCS
+    and/or TensorBoard before closing the writer objects. Once called, the
+    logger instance should not be used to add or write more metrics as the
+    underlying writer objects (e.g., TensorBoard SummaryWriter) will be closed.
     """
+    if self.buffered_train_metrics is not None:
+      (step_to_write, metrics_to_write) = self.buffered_train_metrics
+      self.write_metrics(metrics_to_write, step_to_write)
 
     max_utils.close_summary_writer(self.writer)
