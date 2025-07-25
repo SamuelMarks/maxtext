@@ -128,7 +128,7 @@ def apply_mask_to_logits(logits: Array, mask: Array):
 class ChunkedCausalMask(splash_attention_mask._ComputableMask):  # pylint: disable=protected-access
   """Lazy chunked causal mask.
 
-  Attention is causal within each chunk (0, K), (K, 2K), (2K, 3K), ... tokens attend to each other but not accross chunks.
+  Attention is causal within each chunk (0, K), (K, 2K), (2K, 3K), ... tokens attend to each other but not across chunks.
   Llama4 models use interleaved chunk attention along with global attention.
 
   This mask class inherits from splash_attention_mask._ComputableMask and is designed to be used with Splash Attention.
@@ -886,7 +886,8 @@ class AttentionOp(nnx.Module):
               decoder_segment_ids_q, decoder_segment_ids_unpermuted
           )
         else:
-          decoder_segment_ids_tuple = splash_attention_kernel.SegmentIds(decoder_segment_ids_q, decoder_segment_ids_q)
+          # if cp=1, decoder_segment_ids_q is the same as decoder_segment_ids_kv
+          decoder_segment_ids_tuple = splash_attention_kernel.SegmentIds(decoder_segment_ids_q, decoder_segment_ids_kv)
       else:
         decoder_segment_ids_tuple = None
       attention_output = jax.vmap(splash_kernel)(query, key, value, segment_ids=decoder_segment_ids_tuple)
@@ -1437,7 +1438,7 @@ class Attention(nn.Module):
   is_vision: bool = False
 
   def setup(self):
-    """init with attention_op and possibly paged_attention_op"""
+    """Init with attention_op and possibly paged_attention_op."""
     self.attention_op = attention_op_as_linen(
         config=self.config,
         mesh=self.mesh,
@@ -1651,20 +1652,49 @@ class Attention(nn.Module):
     return inputs
 
   def update_kv_caches(self, key, value, decoder_segment_ids, model_mode, previous_chunk):
-    """Updates the KV caches for prefill and autoregressive modes."""
-    prefill_kv_cache, ar_kv_cache = kvcache.KVCache(
-        self.max_prefill_predict_length,
-        self.max_target_length,
-        self.dtype,
+    """Updates the KV caches for prefill and autoregressive modes.
+
+    This method uses a kvcache module to update and retrieve the key-value
+    caches based on the current operational mode.
+
+    Args:
+      key: The key tensor for the current attention computation.
+      value: The value tensor for the current attention computation.
+      decoder_segment_ids: Segment IDs for the decoder, used for masking.
+      model_mode: The operational mode ('train', 'prefill', 'autoregressive').
+      previous_chunk: Information about previously processed chunks, used for
+        chunked prefill.
+
+    Returns:
+      A list containing two elements:
+      - The prefill key-value cache, or None.
+      - The autoregressive key-value cache, or None.
+    """
+    batch, key_seq_len, key_heads, key_head_size = key.shape
+    batch, value_seq_len, value_heads, value_head_size = value.shape
+
+    prefill_kv_cache, ar_kv_cache = kvcache.kv_cache_as_linen(
+        max_prefill_length=self.max_prefill_predict_length,
+        max_target_length=self.max_target_length,
+        batch=batch,
+        key_seq_len=key_seq_len,
+        value_seq_len=value_seq_len,
+        key_heads=key_heads,
+        value_heads=value_heads,
+        key_head_size=key_head_size,
+        value_head_size=value_head_size,
+        dtype=self.dtype,
         kv_quant=self.kv_quant,
         prefill_cache_axis_order=self.prefill_cache_axis_order,
         ar_cache_axis_order=self.ar_cache_axis_order,
         use_chunked_prefill=self.config.use_chunked_prefill,
+        model_mode=model_mode,
+        name="KVCache_0",
     )(
-        key,
-        value,
-        decoder_segment_ids,
-        model_mode,
+        key=key,
+        value=value,
+        decoder_segment_ids=decoder_segment_ids,
+        model_mode=model_mode,
         use_ragged_attention=self.use_ragged_attention,
         previous_chunk=previous_chunk,
     )
@@ -1997,20 +2027,50 @@ class MLA(Attention):
     return key, value
 
   def update_mla_kv_caches(self, low_rank_main, key_rope, decoder_segment_ids, model_mode, previous_chunk=None):
-    """Updates the MlaKvCache in prefill and autoregressive modes."""
-    prefill_mla_cache, ar_mla_cache = kvcache.MlaKVCache(
-        self.max_prefill_predict_length,
-        self.max_target_length,
-        self.dtype,
+    """Updates the MLA (Multi-Head Latent Attention) KV caches.
+
+    This method is specific to the MLA attention mechanism. It calls the
+    `mla_kv_cache_as_linen` module to update and retrieve the caches, which
+    store latent representations (`low_rank_main`) and RoPE-applied keys
+    (`key_rope`). It then reconstructs the full key and value tensors from
+    the cached components.
+
+    Args:
+      low_rank_main: The main latent component of the key.
+      key_rope: The RoPE-applied component of the key.
+      decoder_segment_ids: Segment IDs for decoder masking.
+      model_mode: The operational mode ('train', 'prefill', 'autoregressive').
+      previous_chunk: Information about previously processed chunks, for
+        chunked prefill.
+
+    Returns:
+      A list containing two elements:
+      - The prefill key-value cache, reconstructed from the MLA cache, or None.
+      - The autoregressive key-value cache, reconstructed from the MLA cache, or None.
+    """
+    batch, key_seq_len, key_head_size = low_rank_main.shape
+    batch, value_seq_len, _, value_head_size = key_rope.shape
+
+    prefill_mla_cache, ar_mla_cache = kvcache.mla_kv_cache_as_linen(
+        max_prefill_length=self.max_prefill_predict_length,
+        max_target_length=self.max_target_length,
+        batch=batch,
+        key_seq_len=key_seq_len,
+        value_seq_len=value_seq_len,
+        key_head_size=key_head_size,
+        value_head_size=value_head_size,
+        dtype=self.dtype,
         kv_quant=self.kv_quant,
         prefill_cache_axis_order=self.prefill_cache_axis_order,
         ar_cache_axis_order=self.ar_cache_axis_order,
+        model_mode=model_mode,
         use_chunked_prefill=self.config.use_chunked_prefill,
+        name="MlaKVCache_0",
     )(
-        low_rank_main,
-        key_rope,
-        decoder_segment_ids,
-        model_mode,
+        key_latent=low_rank_main,
+        key_rope=key_rope,
+        decoder_segment_ids=decoder_segment_ids,
+        model_mode=model_mode,
         use_ragged_attention=self.use_ragged_attention,
         previous_chunk=previous_chunk,
     )
