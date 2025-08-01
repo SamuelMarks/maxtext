@@ -1770,17 +1770,18 @@ def _parse_cli_key_value_pairs(args: List[str]) -> Dict[str, Any]:
                 try:
                     value = float(value_str)
                 except ValueError:
-                    if value_str.lower() == "true":
-                        value = True
-                    elif value_str.lower() == "false":
-                        value = False
-                    elif "," in value_str and "[" not in value_str:
-                        value = [item.strip() for item in value_str.split(",")]
-                    else:
-                        try:
-                            value = yaml.safe_load(value_str)
-                        except (yaml.YAMLError, AttributeError):
-                            value = value_str
+                    match value_str:
+                        case s if s.lower() in ("true", "t", "1"):
+                            value = True
+                        case s if s.lower() in ("false", "f", "0"):
+                            value = False
+                        case s if "," in s and "[" not in s:
+                            value = [item.strip() for item in s.split(",")]
+                        case _:
+                            try:
+                                value = yaml.safe_load(value_str)
+                            except (yaml.YAMLError, AttributeError):
+                                value = value_str
             overrides[key] = value
     return overrides
 
