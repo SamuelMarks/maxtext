@@ -26,8 +26,8 @@ from pydantic_core import PydanticUndefined
 
 from ml_collections.config_dict import ConfigDict
 
-from MaxText.configs import types_j as new_pyconfig
-from MaxText.configs.types_j import MaxTextConfig
+from MaxText.configs import types_k as new_pyconfig
+from MaxText.configs.types_k import MaxTextConfig
 from MaxText.globals import PKG_DIR
 
 

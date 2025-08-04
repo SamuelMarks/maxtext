@@ -32,16 +32,14 @@ import jax.numpy as jnp
 
 from flax.core import freeze
 
-from MaxText import maxtext_utils
+from MaxText import maxtext_utils, pyconfig
 from MaxText.common_types import DECODING_ACTIVE_SEQUENCE_INDICATOR, MODEL_MODE_AUTOREGRESSIVE, MODEL_MODE_PREFILL, MODEL_MODE_TRAIN
-from MaxText.configs import types_j
-from MaxText.globals import PKG_DIR, has_tpu, has_gpu, get_devices
+from MaxText.globals import PKG_DIR, has_tpu, has_gpu
 from MaxText.layers import attentions
 from MaxText.layers.attentions import Attention, MLA, ChunkedCausalMask
 
 tpu_present = has_tpu()
 cpu_only = not tpu_present and not has_gpu()
-
 
 class BidirectionalBlockMaskTest(unittest.TestCase):
   """Test for make_bidirectional_block_mask."""
@@ -165,7 +163,6 @@ class BidirectionalBlockMaskTest(unittest.TestCase):
     )
     np.testing.assert_array_equal(combined_mask, expected_mask)
 
-
 class ChunkedCausalMaskTest(unittest.TestCase):
   """Test for the ChunkedCausalMask."""
 
@@ -259,7 +256,6 @@ class ChunkedCausalMaskTest(unittest.TestCase):
       # pylint: disable=protected-access
       attentions._generate_chunk_attention_mask(mask_shape=(4, 4), chunk_size=0)
 
-
 class AttentionTest(unittest.TestCase):
   """Test for the Attention"""
 
@@ -284,13 +280,13 @@ class AttentionTest(unittest.TestCase):
 
   def setUp(self):
     super().setUp()
-    config = types_j.initialize(
+    config = pyconfig.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         **self.config_arguments,
     )
     self.cfg = config
 
-    config_cp = types_j.initialize(
+    config_cp = pyconfig.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         **self.config_arguments,
         ici_context_parallelism=4,  # use context parallelism of 4
@@ -315,7 +311,7 @@ class AttentionTest(unittest.TestCase):
     self.max_target_length = self.cfg.max_target_length
     self.max_prefill_predict_length = self.cfg.max_prefill_predict_length
     self.head_dim = self.cfg.head_dim
-    self.embed_dim = self.cfg.base_emb_dim
+    self.embed_dim = self.cfg.emb_dim
     self.dtype = self.cfg.dtype
     self.attention_type = self.cfg.attention_type
 
@@ -483,14 +479,17 @@ class AttentionTest(unittest.TestCase):
     self.assertEqual(dtype, mha_prefill.dtype)
 
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only")
   def test_tpu_kernel_attention_mha(self):
     self.tpu_kernel_attention_helper(self.num_kv_heads)
 
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only")
   def test_tpu_kernel_attention_gqa(self):
     self.tpu_kernel_attention_helper(self.num_kv_heads // 2)
 
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only")
   def test_tpu_kernel_attention_mqa(self):
     self.tpu_kernel_attention_helper(1)
 
@@ -637,7 +636,7 @@ class AttentionTest(unittest.TestCase):
 
     rtol, atol = 1e-02, 1e-02
 
-    config = types_j.initialize(
+    config = pyconfig.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         per_device_batch_size=1.0,
         run_name="test",
@@ -671,8 +670,8 @@ class AttentionTest(unittest.TestCase):
     )
     attention_w_layout_variable = attention_w_layout.init(
         {"params": self.rng, "aqt": self.rng},
-        jnp.ones((self.global_batch_size, config.max_target_length, config.base_emb_dim)),
-        jnp.ones((self.global_batch_size, config.max_target_length, config.base_emb_dim)),
+        jnp.ones((self.global_batch_size, config.max_target_length, config.emb_dim)),
+        jnp.ones((self.global_batch_size, config.max_target_length, config.emb_dim)),
         jnp.ones((self.global_batch_size, config.max_target_length)),
     )
     attention_w_layout_full = attention_w_layout.apply(
@@ -737,7 +736,7 @@ class AttentionTest(unittest.TestCase):
 
     rtol, atol = 1e-02, 1e-02
 
-    config = types_j.initialize(
+    config = pyconfig.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         per_device_batch_size=1.0,
         run_name="test",
@@ -770,8 +769,8 @@ class AttentionTest(unittest.TestCase):
     )
     attention_wo_reshape_q_variable = attention_wo_reshape_q.init(
         {"params": self.rng, "aqt": self.rng},
-        jnp.ones((self.global_batch_size, config.max_target_length, config.base_emb_dim)),
-        jnp.ones((self.global_batch_size, config.max_target_length, config.base_emb_dim)),
+        jnp.ones((self.global_batch_size, config.max_target_length, config.emb_dim)),
+        jnp.ones((self.global_batch_size, config.max_target_length, config.emb_dim)),
         jnp.ones((self.global_batch_size, config.max_target_length)),
     )
 
@@ -790,8 +789,8 @@ class AttentionTest(unittest.TestCase):
     )
     attention_w_reshape_q_variable = attention_w_reshape_q.init(
         {"params": self.rng, "aqt": self.rng},
-        jnp.ones((self.global_batch_size, config.max_target_length, config.base_emb_dim)),
-        jnp.ones((self.global_batch_size, config.max_target_length, config.base_emb_dim)),
+        jnp.ones((self.global_batch_size, config.max_target_length, config.emb_dim)),
+        jnp.ones((self.global_batch_size, config.max_target_length, config.emb_dim)),
         jnp.ones((self.global_batch_size, config.max_target_length)),
     )
 
@@ -1020,13 +1019,12 @@ class AttentionTest(unittest.TestCase):
         )
     )
 
-
 class MLATest(parameterized.TestCase):
   """Test for the Multi-Headed Latent Attention"""
 
   def init_mla(self, rope_type):
     """Helper function to initialize MLA with different model names."""
-    cfg: types_j.MaxTextConfig = types_j.initialize(
+    cfg= pyconfig.initialize(
         [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
         per_device_batch_size=1.0,
         run_name="test",
@@ -1038,7 +1036,9 @@ class MLATest(parameterized.TestCase):
     )
     rng = jax.random.PRNGKey(0)
 
-    devices_array = maxtext_utils.create_device_mesh_with_maxtextconfig(cfg)
+    devices_array = maxtext_utils.create_device_mesh(cfg)
+    if jax.device_count() == 1:
+        devices_array = np.array(devices_array).reshape((1,) * len(cfg.mesh_axes))
     mesh = Mesh(devices_array, cfg.mesh_axes)
 
     global_batch_size = cfg.per_device_batch_size
@@ -1047,7 +1047,7 @@ class MLATest(parameterized.TestCase):
     max_target_length = cfg.max_target_length
     max_prefill_predict_length = cfg.max_prefill_predict_length
     head_dim = cfg.head_dim
-    embed_dim = cfg.base_emb_dim
+    embed_dim = cfg.emb_dim
     dtype = cfg.dtype
     attention_type = cfg.attention_type
 
@@ -1084,7 +1084,7 @@ class MLATest(parameterized.TestCase):
     """get data"""
     lnx = jax.random.normal(
         rng,
-        shape=(cfg.global_batch_size_to_train_on, cfg.max_target_length, cfg.base_emb_dim),
+        shape=(cfg.global_batch_size_to_train_on, cfg.max_target_length, cfg.emb_dim),
         dtype=dtype,
     )
 
@@ -1102,7 +1102,7 @@ class MLATest(parameterized.TestCase):
         shape=(
             cfg.per_device_batch_size,
             cfg.max_target_length,
-            cfg.base_emb_dim,
+            cfg.emb_dim,
         ),
         dtype=dtype,
     )
@@ -1178,7 +1178,6 @@ class MLATest(parameterized.TestCase):
       self.assertEqual(mla_full_this_idx.shape, mla_idx.shape)
       # TODO (b/394626702) uncomment last check when decode and kv_cache are implemented for MLA
       # self.assertTrue(jax.numpy.allclose(mla_full_this_idx, mla_idx, rtol=1e-02, atol=1e-02, equal_nan=False))
-
 
 if __name__ == "__main__":
   unittest.main()
