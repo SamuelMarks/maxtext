@@ -149,6 +149,14 @@ def validate_rope_type(rope_type: str) -> None:
     raise ValueError(f"Invalid RoPE type was passed. Got: {rope_type}. Valid options: {valid_rope_types}")
 
 
+def validate_expert_shard_attention_option(expert_shard_attention_option: str) -> None:
+  valid_expert_shard_attention_option = ("fsdp", "context")
+  if expert_shard_attention_option not in valid_expert_shard_attention_option:
+    raise ValueError(
+        f"Invalid expert_shard_attention_option was passed. Got: {expert_shard_attention_option}. Valid options: {valid_expert_shard_attention_option}"
+    )
+
+
 def validate_keys(keys):
   validate_attention_kernel(keys["attention"])
   validate_attention_type(keys["attention_type"])
@@ -200,6 +208,7 @@ def validate_keys(keys):
     validate_sparse_matmul_parallelism(keys)
     validate_ragged_dot(keys)
     validate_deepseek_moe(keys)
+    validate_expert_shard_attention_option(keys["expert_shard_attention_option"])
     assert keys["decoder_block"] != "qwen3", "Qwen3 MoE mode has not been tested, please set num_experts to 1."
 
   if keys["use_multimodal"]:
@@ -606,6 +615,7 @@ class _HyperParameters:
 
     raw_keys["num_slices"] = max_utils.get_num_slices(raw_keys)
     raw_keys["quantization_local_shard_count"] = get_quantization_local_shard_count(raw_keys)
+    raw_keys["context_parallel_size"] = get_context_parallel_size(raw_keys)
     raw_keys = create_parallelisms_list(raw_keys)
     raw_keys = set_and_validate_pipeline_config(raw_keys)
 
@@ -784,6 +794,9 @@ def validate_multiple_slices(raw_keys):
 
 def set_and_validate_pipeline_config(raw_keys):
   if using_pipeline_parallelism(raw_keys):
+    # For pipeline parallelism, model_fsdp_ag_once should be False, and pipeline_fsdp_ag_once is typically True.
+    if raw_keys["model_fsdp_ag_once"]:
+      raise ValueError("You should only set pipeline_fsdp_once=True, leave model_fsdp_ag_once=False with pipeline parallelism.")
 
     def modify_activation_embed_and_logits_batch(logical_axis_rules):
       for idx, logical_rule in enumerate(logical_axis_rules):
@@ -939,8 +952,24 @@ def validate_deepseek_moe(raw_keys):
 
 
 def validate_sparse_matmul_parallelism(raw_keys):
-  if raw_keys["sparse_matmul"] and (using_sequence_parallelism(raw_keys) or using_pipeline_parallelism(raw_keys)):
-    raise ValueError("Currently we only support Megablox and Ragged dot with data, tensor, tensor_transpose, and expert parallelism.")
+  # TODO: remove once b/434699033 resolved
+  if raw_keys["sparse_matmul"] and (using_expert_parallelism(raw_keys) and using_pipeline_parallelism(raw_keys)):
+    raise ValueError(
+        "Sparse matmul doesn't support using expert and pipeline parallelism together."
+    )
+
+  # TODO: remove once b/435539039 resolved
+  if (
+      raw_keys["sparse_matmul"]
+      and (
+          using_fsdp_and_transpose_parallelism(raw_keys)
+          and using_expert_parallelism(raw_keys)
+          and using_tensor_parallelism(raw_keys)
+      )
+  ):
+    raise ValueError(
+        "Sparse matmul doesn't support using fsdp, expert, and tensor parallelism together."
+    )
   tensor_parallelism = (
       raw_keys["ici_tensor_parallelism"]
       * raw_keys["dcn_tensor_parallelism"]
@@ -958,12 +987,7 @@ def validate_sparse_matmul_parallelism(raw_keys):
     raise ValueError(
         f"The expert dimension {raw_keys['num_experts']} is not divisible by expert parallelism setting {expert_parallelism}."
     )
-  if (
-      using_pipeline_parallelism(raw_keys)
-      and raw_keys["pipeline_parallel_layers"] is True
-      and raw_keys["model_fsdp_ag_once"] is True
-  ):
-    raise ValueError("You should use the pipeline_fsdp_ag_once = True and leave model_fsdp_ag_once = False.")
+
 
 def validate_ragged_dot(raw_keys):
   if raw_keys["sparse_matmul"] and not raw_keys["megablox"]:
@@ -971,9 +995,8 @@ def validate_ragged_dot(raw_keys):
     try:
       jax.config.update(config_flag, True)
     except AttributeError:
-      max_logging.log(
-          f"JAX config {config_flag} not found, possibly due to old JAX version."
-      )
+      max_logging.log(f"JAX config {config_flag} not found, possibly due to old JAX version.")
+
 
 def create_new_logical_axis_rules(old_logical_axis_rules, new_logical_axis_rules):
   new_logical_axis = set()
@@ -1084,6 +1107,14 @@ def get_quantization_local_shard_count(raw_keys):
     return raw_keys["quantization_local_shard_count"]
 
 
+def get_context_parallel_size(raw_keys):
+  cp_size = raw_keys["ici_context_parallelism"] * raw_keys["dcn_context_parallelism"]
+  # ep acts as cp in attention
+  if raw_keys["expert_shard_attention_option"] == "context":
+    cp_size = cp_size * raw_keys["ici_expert_parallelism"] * raw_keys["dcn_expert_parallelism"]
+  return cp_size
+
+
 def using_pipeline_parallelism(raw_keys) -> bool:
   return int(raw_keys["ici_pipeline_parallelism"]) > 1 or int(raw_keys["dcn_pipeline_parallelism"]) > 1
 
@@ -1105,6 +1136,15 @@ def using_sequence_parallelism(raw_keys) -> bool:
 
 def using_expert_parallelism(raw_keys) -> bool:
   return int(raw_keys["ici_expert_parallelism"]) > 1 or int(raw_keys["dcn_expert_parallelism"]) > 1
+
+
+def using_fsdp_and_transpose_parallelism(raw_keys) -> bool:
+  return (
+      int(raw_keys["ici_fsdp_parallelism"]) > 1
+      or int(raw_keys["dcn_fsdp_parallelism"]) > 1
+      or int(raw_keys["ici_fsdp_transpose_parallelism"]) > 1
+      or int(raw_keys["dcn_fsdp_transpose_parallelism"]) > 1
+  )
 
 
 class HyperParameters:
