@@ -16,9 +16,9 @@ comments, or questions by creating a new
 ├── AUTHORS
 ├── CONTRIBUTING.md
 ├── LICENSE
-|   # Note: Keeping src/maxtext/ temporarily for backwards compatibility.
+|   # Note: Keeping src/MaxText/ temporarily for backwards compatibility.
 |   # This will be deprecated. We will remove it in the near future.
-├── src/maxtext/
+├── src/MaxText/
 │   ├── decode.py
 │   ├── sft.py
 │   ├── train.py
