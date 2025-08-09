@@ -54,7 +54,7 @@ MaxText requires checkpoints to be in a specific format. You'll need to convert 
 ```bash
 # Get unscanned checkpoint for efficient decoding
 JAX_PLATFORMS=cpu \
-python3 -m MaxText.convert_deepseek_unscanned_ckpt \
+python3 -m maxtext.convert_deepseek_unscanned_ckpt \
   --base_model_path ~/deepseek2-16b-chat \
   --maxtext_model_path ${BASE_DIRECTORY}/deepseek2-16-chat/unscanned \
   --model_size deepseek2-16b
@@ -74,7 +74,7 @@ MaxText requires checkpoints to be in a specific format. You'll need to convert 
 ```bash
 # Get scanned checkpoint for fine-tuning
 JAX_PLATFORMS=cpu \
-python3 -m MaxText.llama_or_mistral_ckpt \
+python3 -m maxtext.llama_or_mistral_ckpt \
   --base-model-path ~/llama2-7b-chat \
   --maxtext-model-path ${BASE_DIRECTORY}/llama2-7b-chat/scanned \
   --model-size llama2-7b
@@ -88,7 +88,7 @@ Once the teacher model's checkpoint is in the MaxText format, you can run infere
 Example command to run JetStream server on `v4-8`:
 
 ```bash
-python3 -m MaxText.maxengine_server MaxText/configs/base.yml \
+python3 -m maxtext.maxengine_server maxtext/configs/base.yml \
   tokenizer_path=deepseek-ai/DeepSeek-V2-Lite-chat tokenizer_type=huggingface \
   load_parameters_path=${BASE_DIRECTORY}/deepseek2-16-chat/unscanned/0/items \
   model_name=deepseek2-16b \
@@ -106,7 +106,7 @@ Set `multi_sampling` to `True` to generate multiple independent completions per 
 In a new tab in your terminal, run the following command to generate dataset from teacher model. Note that this is an example command to run on `v4-8`:
 
 ```bash
-python3 -m MaxText.generate_distillation_data \
+python3 -m maxtext.generate_distillation_data \
   --tokenizer-path deepseek-ai/DeepSeek-V2-Lite-chat \
   --dataset-path HuggingFaceH4/ultrachat_200k --data-split train_sft \
   --data-columns messages \
@@ -133,7 +133,7 @@ You can now fine-tune your smaller student model using supervised fine-tuning te
 Example command to run fine-tuning on v4-8:
 
 ```bash
-python3 -m MaxText.sft_trainer MaxText/configs/sft.yml \
+python3 -m maxtext.sft_trainer maxtext/configs/sft.yml \
   run_name=${RUN_NAME} \
   base_output_directory=${BASE_DIRECTORY}/distillation/deepseek2-16b-distill-llama2-7b \
   tokenizer_path=meta-llama/Llama-2-7b-chat-hf tokenizer_type=huggingface \
@@ -166,7 +166,7 @@ largest_dir="${sorted_dirs[-1]}"
 FINE_TUNED_MODEL_CKPT_PATH=${CHECKPOINTS_PATH}/${largest_dir}/items
 
 # Fine-tune student model on original dataset
-python3 -m MaxText.sft_trainer MaxText/configs/sft.yml \
+python3 -m maxtext.sft_trainer maxtext/configs/sft.yml \
   run_name=${RUN_NAME} \
   base_output_directory=${BASE_DIRECTORY}/distillation/deepseek2-16b-distill-llama2-7b \
   tokenizer_path=meta-llama/Llama-2-7b-chat-hf tokenizer_type=huggingface \

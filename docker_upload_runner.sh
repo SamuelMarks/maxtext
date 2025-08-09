@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This scripts takes a docker image that already contains the MaxText dependencies, copies the local source code in and
+# This scripts takes a docker image that already contains the maxtext dependencies, copies the local source code in and
 # uploads that image into GCR. Once in GCR the docker image can be used for development.
 
 # Each time you update the base image via a "bash docker_build_dependency_image.sh", there will be a slow upload process
@@ -44,8 +44,8 @@ if [[ ! -v CLOUD_IMAGE_NAME ]]; then
   exit 1
 fi
 
-# Download other test assets from GCS into MaxText/test_assets
-if ! gcloud storage cp gs://maxtext-test-assets/* MaxText/test_assets; then
+# Download other test assets from GCS into maxtext/test_assets
+if ! gcloud storage cp gs://maxtext-test-assets/* src/maxtext/test_assets; then
   echo "WARNING: Failed to download test assets from GCS. These files are only used for end-to-end tests; you may not have access to the bucket."
 fi
 

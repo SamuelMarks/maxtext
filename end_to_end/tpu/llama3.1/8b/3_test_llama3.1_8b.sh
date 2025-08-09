@@ -13,44 +13,44 @@ export RUN_NAME=unscanned_chkpt
 export CHECKPOINT_TPU_UNSCANNED=$BASE_OUTPUT_PATH/$RUN_NAME/checkpoints/0/items
 export CHECKPOINT_TPU_CONVERTED_BACK=${CHECKPOINT_ORIGINAL}/converted_back
 export MODEL_SIZE=llama3.1-8b
-export GOLDEN_LOGITS=MaxText/test_assets/golden_data_deepseek_r1_distill_llama3.1_8b.jsonl
+export GOLDEN_LOGITS=src/maxtext/test_assets/golden_data_deepseek_r1_distill_llama3.1_8b.jsonl
 
 # Remove previous checkpoints to have a clean start
 rm $CHECKPOINT_ORIGINAL/scanned_chkpt $CHECKPOINT_ORIGINAL/unscanned_chkpt ${CHECKPOINT_ORIGINAL}/converted_back
 
 # Convert the checkpoints
-JAX_PLATFORMS=cpu python3 -m MaxText.llama_or_mistral_ckpt --base-model-path=$CHECKPOINT_ORIGINAL --model-size=$MODEL_SIZE --maxtext-model-path=$CHECKPOINT_TPU_SCANNED  --huggingface-checkpoint=true
+JAX_PLATFORMS=cpu python3 -m maxtext.llama_or_mistral_ckpt --base-model-path=$CHECKPOINT_ORIGINAL --model-size=$MODEL_SIZE --maxtext-model-path=$CHECKPOINT_TPU_SCANNED  --huggingface-checkpoint=true
 
 # Let's verify the original checkpoint to see if it matches with Huggingface golden logits
-python3 -m MaxText.tests.forward_pass_logit_checker MaxText/configs/base.yml base_output_directory=${BASE_OUTPUT_PATH} tokenizer_path=$TOKENIZER tokenizer_type=tiktoken load_parameters_path=${CHECKPOINT_TPU_SCANNED}/0/items run_name=forward_pass_test_hf per_device_batch_size=1 model_name=$MODEL_SIZE max_prefill_predict_length=3 max_target_length=4 dataset_type=synthetic dtype=float32 activations_in_float32=true matmul_precision=float32 async_checkpointing=false scan_layers=true --max_kl_div=1e-4 --hf_model_path=$CHECKPOINT_ORIGINAL --golden_logits_path=$GOLDEN_LOGITS
+python3 -m maxtext.tests.forward_pass_logit_checker src/maxtext/configs/base.yml base_output_directory=${BASE_OUTPUT_PATH} tokenizer_path=$TOKENIZER tokenizer_type=tiktoken load_parameters_path=${CHECKPOINT_TPU_SCANNED}/0/items run_name=forward_pass_test_hf per_device_batch_size=1 model_name=$MODEL_SIZE max_prefill_predict_length=3 max_target_length=4 dataset_type=synthetic dtype=float32 activations_in_float32=true matmul_precision=float32 async_checkpointing=false scan_layers=true --max_kl_div=1e-4 --hf_model_path=$CHECKPOINT_ORIGINAL --golden_logits_path=$GOLDEN_LOGITS
 
 # Let's verify the generated scanned checkpoint to see if it matches with Huggingface golden logits
-python3 -m MaxText.tests.forward_pass_logit_checker MaxText/configs/base.yml base_output_directory=${BASE_OUTPUT_PATH} tokenizer_path=$TOKENIZER tokenizer_type=tiktoken load_parameters_path=${CHECKPOINT_TPU_SCANNED}/0/items run_name=forward_pass_test_hf per_device_batch_size=1 model_name=$MODEL_SIZE max_prefill_predict_length=3 max_target_length=4 dataset_type=synthetic dtype=float32 activations_in_float32=true matmul_precision=float32 async_checkpointing=false scan_layers=true --max_kl_div=1e-4 --golden_logits_path=$GOLDEN_LOGITS
+python3 -m maxtext.tests.forward_pass_logit_checker src/maxtext/configs/base.yml base_output_directory=${BASE_OUTPUT_PATH} tokenizer_path=$TOKENIZER tokenizer_type=tiktoken load_parameters_path=${CHECKPOINT_TPU_SCANNED}/0/items run_name=forward_pass_test_hf per_device_batch_size=1 model_name=$MODEL_SIZE max_prefill_predict_length=3 max_target_length=4 dataset_type=synthetic dtype=float32 activations_in_float32=true matmul_precision=float32 async_checkpointing=false scan_layers=true --max_kl_div=1e-4 --golden_logits_path=$GOLDEN_LOGITS
 
-# If not, we can convert the checkpoint back from MaxText to Huggingface and compare with the original one
-JAX_PLATFORMS=cpu python3 -m MaxText.llama_mistral_mixtral_orbax_to_hf MaxText/configs/base.yml base_output_directory=gs://runner-maxtext-logs load_parameters_path=${CHECKPOINT_TPU_SCANNED}/0/items run_name=convert_to_hf model_name=${MODEL_SIZE} hf_model_path=$CHECKPOINT_TPU_CONVERTED_BACK
+# If not, we can convert the checkpoint back from maxtext to Huggingface and compare with the original one
+JAX_PLATFORMS=cpu python3 -m maxtext.llama_mistral_mixtral_orbax_to_hf src/maxtext/configs/base.yml base_output_directory=gs://runner-maxtext-logs load_parameters_path=${CHECKPOINT_TPU_SCANNED}/0/items run_name=convert_to_hf model_name=${MODEL_SIZE} hf_model_path=$CHECKPOINT_TPU_CONVERTED_BACK
 
-python3 -m MaxText.tests.hf_checkpoint_conversion_checker --original_ckpt=${CHECKPOINT_ORIGINAL} --converted_ckpt=${CHECKPOINT_TPU_CONVERTED_BACK}
+python3 -m maxtext.tests.hf_checkpoint_conversion_checker --original_ckpt=${CHECKPOINT_ORIGINAL} --converted_ckpt=${CHECKPOINT_TPU_CONVERTED_BACK}
 
 # If everything looks good, we move on to convert to the unrolled checkpoint for performant serving
-JAX_PLATFORMS=cpu python3 -m MaxText.generate_param_only_checkpoint MaxText/configs/base.yml async_checkpointing=false base_output_directory=${BASE_OUTPUT_PATH} load_parameters_path=${CHECKPOINT_TPU_SCANNED}/0/items run_name=${RUN_NAME} model_name=${MODEL_SIZE} force_unroll=true
+JAX_PLATFORMS=cpu python3 -m maxtext.generate_param_only_checkpoint src/maxtext/configs/base.yml async_checkpointing=false base_output_directory=${BASE_OUTPUT_PATH} load_parameters_path=${CHECKPOINT_TPU_SCANNED}/0/items run_name=${RUN_NAME} model_name=${MODEL_SIZE} force_unroll=true
 
 # Let's verify the generated unscanned checkpoint to see if it matches with Huggingface golden logits
-python3 -m MaxText.tests.forward_pass_logit_checker MaxText/configs/base.yml base_output_directory=${BASE_OUTPUT_PATH} tokenizer_path=$TOKENIZER tokenizer_type=tiktoken load_parameters_path=${CHECKPOINT_TPU_UNSCANNED} run_name=forward_pass_test_hf per_device_batch_size=1 model_name=$MODEL_SIZE max_prefill_predict_length=3 max_target_length=4 dataset_type=synthetic dtype=float32 activations_in_float32=true matmul_precision=float32 async_checkpointing=false scan_layers=false --max_kl_div=1e-4 --golden_logits_path=$GOLDEN_LOGITS
+python3 -m maxtext.tests.forward_pass_logit_checker src/maxtext/configs/base.yml base_output_directory=${BASE_OUTPUT_PATH} tokenizer_path=$TOKENIZER tokenizer_type=tiktoken load_parameters_path=${CHECKPOINT_TPU_UNSCANNED} run_name=forward_pass_test_hf per_device_batch_size=1 model_name=$MODEL_SIZE max_prefill_predict_length=3 max_target_length=4 dataset_type=synthetic dtype=float32 activations_in_float32=true matmul_precision=float32 async_checkpointing=false scan_layers=false --max_kl_div=1e-4 --golden_logits_path=$GOLDEN_LOGITS
 
 # Now we are good to go, serve with performance!
-JAX_PLATFORMS=tpu python3 -m MaxText.decode MaxText/configs/base.yml tokenizer_path=$TOKENIZER tokenizer_type=tiktoken run_name=runner_2025-02-13-08-31 steps=10 weight_dtype=bfloat16 async_checkpointing=false model_name=$MODEL_SIZE ici_fsdp_parallelism=1 ici_autoregressive_parallelism=-1 per_device_batch_size=1 prompt="I love to" scan_layers=false load_parameters_path=$CHECKPOINT_TPU_UNSCANNED
+JAX_PLATFORMS=tpu python3 -m maxtext.decode src/maxtext/configs/base.yml tokenizer_path=$TOKENIZER tokenizer_type=tiktoken run_name=runner_2025-02-13-08-31 steps=10 weight_dtype=bfloat16 async_checkpointing=false model_name=$MODEL_SIZE ici_fsdp_parallelism=1 ici_autoregressive_parallelism=-1 per_device_batch_size=1 prompt="I love to" scan_layers=false load_parameters_path=$CHECKPOINT_TPU_UNSCANNED
 
 # You can also check the results from scanned version, just double check, not necessary
-JAX_PLATFORMS=tpu python3 -m MaxText.decode MaxText/configs/base.yml tokenizer_path=$TOKENIZER tokenizer_type=tiktoken run_name=runner_2025-02-13-08-31 steps=10 weight_dtype=bfloat16 async_checkpointing=false model_name=$MODEL_SIZE ici_fsdp_parallelism=1 ici_autoregressive_parallelism=-1 per_device_batch_size=1 prompt="I love to" scan_layers=true load_parameters_path=$CHECKPOINT_TPU_SCANNED/0/items
+JAX_PLATFORMS=tpu python3 -m maxtext.decode src/maxtext/configs/base.yml tokenizer_path=$TOKENIZER tokenizer_type=tiktoken run_name=runner_2025-02-13-08-31 steps=10 weight_dtype=bfloat16 async_checkpointing=false model_name=$MODEL_SIZE ici_fsdp_parallelism=1 ici_autoregressive_parallelism=-1 per_device_batch_size=1 prompt="I love to" scan_layers=true load_parameters_path=$CHECKPOINT_TPU_SCANNED/0/items
 
-##### Output from huggingface llama 8B Instruct checkpoint on MaxText:
+##### Output from huggingface llama 8B Instruct checkpoint on maxtext:
 #Input `I love to` -> ` travel and explore new places, but I also love to stay at home and relax. I'm a bit of a homebody, and I enjoy spending time with my family and friends. I'm a bit of a foodie, and I love trying new recipes and experimenting with different flavors and ingredients. I'm also a bit of a movie buff, and I love watching classic films and new releases alike.
 # I'm a bit of a hopeless romantic, and I believe in the idea of true love. I'm looking for someone who shares my values and my sense of humor, and who is always up for a good time. I'm a bit of a goofball, and I love to laugh and have fun. I'm looking for someone who can keep up with me and appreciate my quirks.
 # I'm a bit of a creative person, and I love to express myself through art, music, and writing. I'm a bit of a dreamer, and I love to imagine new possibilities and scenarios. I'm a bit of a perfectionist, and I always strive to do my best and be my best self.
 # ...
 
-##### Output from huggingface DeekSeek distilled llama 8B checkpoint on MaxText:
+##### Output from huggingface DeekSeek distilled llama 8B checkpoint on maxtext:
 # Input `I love to` -> ` write, but I'm not sure how to start a blog. I have some ideas, but I don't know where to begin. Maybe I should just start writing and see where it goes. But I don't want to end up with just a few posts and then stop. How do I keep going?
 
 # I also wonder if I should focus on a specific niche or write about a variety of topics. I like cooking, photography, and personal development. It's hard to decide which one to focus on. Maybe I can combine them somehow?

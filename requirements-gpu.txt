@@ -1,0 +1,5 @@
+# https://github.com/NVIDIA/TransformerEngine/zipball/9d031f
+transformer-engine[jax] @ https://github.com/NVIDIA/TransformerEngine/archive/9d031f.zip#sha1=92cc6127a48c90499969bca8f56a39b88f1b5d85
+jax-cuda12-pjrt
+jax-cuda12-plugin[with-cuda]
+jax[cuda12]

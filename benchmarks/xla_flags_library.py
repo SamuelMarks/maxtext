@@ -16,7 +16,7 @@
 """This file contains commonly-used XLA Flags."""
 
 ### NOTICE ###
-# These are potential optimization flags that are used within MaxText models.
+# These are potential optimization flags that are used within maxtext models.
 # They may or may not provide performance improvements in extended use cases
 # but provide a recommendation for potential grouping of xla flags and their
 # usage. Please refer to their usage for examples.

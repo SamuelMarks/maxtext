@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# This file, combined with step 2 in the same directory, demonstrates converting a Gemma2 checkpoint from Kaggle and running various MaxText operations on it.
+# This file, combined with step 2 in the same directory, demonstrates converting a Gemma2 checkpoint from Kaggle and running various maxtext operations on it.
 # This step is tested nightly on an ordinary CPU VM.
 
 # The flow of this file is as follows:
-# 1. Pull the checkpoint from a GCS bucket and uploads the new MaxText compatible checkpoint to destination GCS bucket.
+# 1. Pull the checkpoint from a GCS bucket and uploads the new maxtext compatible checkpoint to destination GCS bucket.
 # 2. Convert the scanned checkpoint from step 1 into unscanned checkpoint format and run more efficient decoding.
 
 # Example Usage: export BASE_OUTPUT_PATH=/path/to/GCS/bucket; bash end_to_end/tpu/gemma2/27b/1_test_gemma.sh
@@ -17,7 +17,7 @@ export MODEL_VARIATION='27b'
 
 
 # After downloading checkpoints, copy them to GCS bucket at $CHKPT_BUCKET \
-# Please use separate GCS paths for uploading model weights from kaggle ($CHKPT_BUCKET) and MaxText compatible weights ($BASE_OUTPUT_PATH).
+# Please use separate GCS paths for uploading model weights from kaggle ($CHKPT_BUCKET) and maxtext compatible weights ($BASE_OUTPUT_PATH).
 # Non-Googlers please remember to point CHKPT_BUCKET to GCS buckets that you own
 export CHKPT_BUCKET=gs://maxtext-gemma/flax
 
@@ -31,16 +31,16 @@ fi
 echo "Converted checkpoints are stored at ${BASE_OUTPUT_PATH}"
 
 
-JAX_PLATFORMS=cpu python3 -m MaxText.convert_gemma2_chkpt --base_model_path ${CHKPT_BUCKET}/${MODEL_VARIATION} --maxtext_model_path ${BASE_OUTPUT_PATH}/${MODEL_VARIATION}/scanned_chkpt --model_size ${MODEL_VARIATION}
+JAX_PLATFORMS=cpu python3 -m maxtext.convert_gemma2_chkpt --base_model_path ${CHKPT_BUCKET}/${MODEL_VARIATION} --maxtext_model_path ${BASE_OUTPUT_PATH}/${MODEL_VARIATION}/scanned_chkpt --model_size ${MODEL_VARIATION}
 echo "Wrote MaxText compatible checkpoint to ${BASE_OUTPUT_PATH}/${MODEL_VARIATION}/scanned_chkpt"
 
 # We define `CONVERTED_CHECKPOINT` to refer to the checkpoint subdirectory.
 export CONVERTED_CHECKPOINT=${BASE_OUTPUT_PATH}/${MODEL_VARIATION}/scanned_chkpt/0/items
 # Note that the `CONVERTED_CHECKPOINT` is in a `scanned` format which is great for training but for efficient decoding performance we want the checkpoint in an `unscanned` format.
-# We can do this by running `MaxText/generate_param_only_checkpoint.py` on `CONVERTED_CHECKPOINT` with `force_unroll=true`. 
+# We can do this by running `maxtext/generate_param_only_checkpoint.py` on `CONVERTED_CHECKPOINT` with `force_unroll=true`.
 export RUN_NAME=unscanned_chkpt
 
 export UNSCANNED_CKPT_PATH=${BASE_OUTPUT_PATH}/${RUN_NAME}/checkpoints/0/items
 
-JAX_PLATFORMS=cpu python3 -m MaxText.generate_param_only_checkpoint MaxText/configs/base.yml async_checkpointing=false base_output_directory=${BASE_OUTPUT_PATH} load_parameters_path=${CONVERTED_CHECKPOINT} run_name=${RUN_NAME} model_name=gemma2-27b force_unroll=true
+JAX_PLATFORMS=cpu python3 -m maxtext.generate_param_only_checkpoint maxtext/configs/base.yml async_checkpointing=false base_output_directory=${BASE_OUTPUT_PATH} load_parameters_path=${CONVERTED_CHECKPOINT} run_name=${RUN_NAME} model_name=gemma2-27b force_unroll=true
 echo "Written MaxText compatible unscanned checkpoint to ${BASE_OUTPUT_PATH}/${MODEL_VARIATION}/${RUN_NAME}/checkpoints/0/items"

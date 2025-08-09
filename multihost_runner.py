@@ -15,7 +15,7 @@
  """
 from tempfile import gettempdir
 
-from MaxText.globals import PKG_DIR
+from maxtext.globals import PKG_DIR
 
 # pylint: disable=consider-using-with
 """ Script to run a command in a multislice/multihost environment

@@ -118,25 +118,25 @@ arithmetic intensity analysis since they shard the batch, as we will illustrate 
 
 Sharding in maxtext is split into 3 layers
 
-* **Physical** mesh axes (e.g. `data`, `fsdp`, `tensor`) defined [here](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/MaxText/configs/base.yml#L269)
+* **Physical** mesh axes (e.g. `data`, `fsdp`, `tensor`) defined [here](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/src/maxtext/configs/base.yml#L269)
 
-    * Mesh is created via [create_device_mesh](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/MaxText/max_utils.py#L576-L580)
+    * Mesh is created via [create_device_mesh](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/src/maxtext/max_utils.py#L576-L580)
 
-    * Mesh given names in train.py via [Mesh](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/MaxText/train.py#L594)
+    * Mesh given names in train.py via [Mesh](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/src/maxtext/train.py#L594)
 
-* **Logical** axes which map a meaningful axes name to physical axes defined [here](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/MaxText/configs/base.yml#L270)
+* **Logical** axes which map a meaningful axes name to physical axes defined [here](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/src/maxtext/configs/base.yml#L270)
 
     * E.g. logical axes `activation_batch` is sharded by the physical axes of `data` and `fsdp` (among others) since those sharding strategies shard the batch. `Activation_batch` is a common axis among most activation tensors. Note that if we use `data_parallelism=4` and `fsdp_parallelism=2`, then the `activation_batch` dimension will get sharded over both, e.g. $4*2=8$ ways.
 
 * **Individual tensors** have sharding constraints - generally specified by logical rules
 
-    * Example for weights using `kernel_axes` in `MlpBlock` [here](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/MaxText/layers/linears.py#L240) which in turns relies on flax’s param argument `nn.with_logical_partitioning` [here](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/MaxText/layers/linears.py#L135)
+    * Example for weights using `kernel_axes` in `MlpBlock` [here](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/src/maxtext/layers/linears.py#L240) which in turns relies on flax’s param argument `nn.with_logical_partitioning` [here](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/src/maxtext/layers/linears.py#L135)
 
-    * For activations we use `nn.with_logical_constraint` to give sharding hints for the compiler - here is an [example](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/MaxText/layers/llama2.py#L85). Sharding hints for the activations is not strictly necessary but the compiler may do funky/inefficient things without these hints.
+    * For activations we use `nn.with_logical_constraint` to give sharding hints for the compiler - here is an [example](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/src/maxtext/layers/llama2.py#L85). Sharding hints for the activations is not strictly necessary but the compiler may do funky/inefficient things without these hints.
 
 # Hierarchical Mesh
 
-Constructing a hierarchical mesh and specifying shardings is very similar to a “flat” mesh except we use the nice API [create_hybrid_device_mesh](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/MaxText/max_utils.py#L558) and specify both the degree of lower level faster network (e.g. `TPU ICI`) and higher level slower network (e.g. `DCN`) separately. For example if we want to use 4x fsdp parallelism over `ICI` and 2x data parallelism over `DCN` then we specify
+Constructing a hierarchical mesh and specifying shardings is very similar to a “flat” mesh except we use the nice API [create_hybrid_device_mesh](https://github.com/AI-Hypercomputer/maxtext/blob/f269268bd622f6d2f40d38632ede7a7834a6024e/src/maxtext/max_utils.py#L558) and specify both the degree of lower level faster network (e.g. `TPU ICI`) and higher level slower network (e.g. `DCN`) separately. For example if we want to use 4x fsdp parallelism over `ICI` and 2x data parallelism over `DCN` then we specify
 
 ```
 mesh = mesh_utils.create_hybrid_device_mesh(
@@ -425,8 +425,8 @@ Note that for MoE models, this arithmetic intensity grows by a factor of `expert
 
 # Context Autoregressive
 
-Context Autoregressive shards the KV cache on the sequence dimension. It shards feed forward layer by experts for both activations and weights. This is used for inference only, see [inference.yml](https://github.com/AI-Hypercomputer/maxtext/blob/353a45d57eb1f1cc02e5c8d9e7b18eaf634d7edc/MaxText/configs/inference.yml#L4) for the modified logical axis rules for inference.
+Context Autoregressive shards the KV cache on the sequence dimension. It shards feed forward layer by experts for both activations and weights. This is used for inference only, see [inference.yml](https://github.com/AI-Hypercomputer/maxtext/blob/353a45d57eb1f1cc02e5c8d9e7b18eaf634d7edc/src/maxtext/configs/inference.yml#L4) for the modified logical axis rules for inference.
 
 # Autoregressive
 
-Autoregressive shards weights, but not activations. This is used for inference only. See [inference.yml](https://github.com/AI-Hypercomputer/maxtext/blob/353a45d57eb1f1cc02e5c8d9e7b18eaf634d7edc/MaxText/configs/inference.yml#L4) for the modified logical axis rules for inference.
+Autoregressive shards weights, but not activations. This is used for inference only. See [inference.yml](https://github.com/AI-Hypercomputer/maxtext/blob/353a45d57eb1f1cc02e5c8d9e7b18eaf634d7edc/src/maxtext/configs/inference.yml#L4) for the modified logical axis rules for inference.

@@ -21,7 +21,7 @@ COPY requirements.txt requirements_with_jax_ai_image.txt requirements_with_jax_s
 # Orbax checkpoint installs the latest version of JAX,
 # but the libtpu version in the base image is older.
 # This version mismatch can cause compatibility issues
-# and break MaxText.
+# and break maxtext.
 # Upgrade libtpu version if using either of the old stable images
 
 ARG DEVICE
@@ -51,7 +51,7 @@ RUN ls .
 ARG TEST_TYPE
 # Copy over test assets if building image for end-to-end tests or unit tests
 RUN if [ "$TEST_TYPE" = "xlml" ] || [ "$TEST_TYPE" = "unit_test" ]; then \
-      if ! gcloud storage cp -r gs://maxtext-test-assets/* MaxText/test_assets; then \
+      if ! gcloud storage cp -r gs://maxtext-test-assets/* maxtext/test_assets; then \
         echo "WARNING: Failed to download test assets from GCS. These files are only used for end-to-end tests; you may not have access to the bucket."; \
       fi; \
     fi

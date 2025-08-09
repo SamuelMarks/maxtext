@@ -24,7 +24,7 @@ pre-commit install
 ```
 4. After installation completes, run training with the command on synthetic data:
 ```
-python3 -m MaxText.train MaxText/configs/base.yml \
+python3 -m maxtext.train src/maxtext/configs/base.yml \
   run_name=$YOUR_JOB_NAME \
   base_output_directory=gs://<my-bucket> \
   dataset_type=synthetic \
@@ -34,7 +34,7 @@ Next, you can try training on a HugginFace dataset, see [Data Input Pipeline](ht
 
 5. If you want to decode, you can decode as follows.
 ```
-python3 -m MaxText.decode MaxText/configs/base.yml \
+python3 -m maxtext.decode src/maxtext/configs/base.yml \
   run_name=$YOUR_JOB_NAME \
   base_output_directory=gs://<my-bucket> \
   per_device_batch_size=1
@@ -46,7 +46,7 @@ Be aware, these decodings will be random. To get high quality decodings you need
 1. Use `bash docker_build_dependency_image.sh DEVICE=gpu` can be used to build a container with the required dependencies.
 2. After installation is completed, run training with the command on synthetic data:
 ```
-python3 -m MaxText.train MaxText/configs/base.yml \
+python3 -m maxtext.train src/maxtext/configs/base.yml \
   run_name=$YOUR_JOB_NAME \
   base_output_directory=gs://<my-bucket> \
   dataset_type=synthetic \
@@ -55,7 +55,7 @@ python3 -m MaxText.train MaxText/configs/base.yml \
 
 3. If you want to decode, you can decode as follows.
 ```
-python3 -m MaxText.decode MaxText/configs/base.yml \
+python3 -m maxtext.decode src/maxtext/configs/base.yml \
   run_name=$YOUR_JOB_NAME \
   base_output_directory=gs://<my-bucket> \
   per_device_batch_size=1  

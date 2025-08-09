@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # This file, combined with step 2 in the same directory, runs on daily basis and demonstrates:
-# 1. Converts the Mistral PyTorch checkpoint to MaxText(orbax) format using a CPU VM.
-# 2. Takes the MaxText(orbax) checkpoint to run inference, fine-tuning, and pre-training on a TPU VM.
+# 1. Converts the Mistral PyTorch checkpoint to maxtext(orbax) format using a CPU VM.
+# 2. Takes the maxtext(orbax) checkpoint to run inference, fine-tuning, and pre-training on a TPU VM.
 
-# The flow of this file is to convert the Mistral PyTorch checkpoint to MaxText (orbax) format using a CPU VM.
+# The flow of this file is to convert the Mistral PyTorch checkpoint to maxtext (orbax) format using a CPU VM.
 
 # Example Usage: export BASE_OUTPUT_PATH=/path/to/GCS/bucket; bash end_to_end/tpu/mixtral/8x22b/1_test_mixtral.sh
 # Use the same BASE_OUTPUT_PATH for both 1_test_mixtral.sh & 2_test_mixtral.sh.
@@ -28,8 +28,8 @@ mkdir -p "$PARAM_DIR"
 gcsfuse --implicit-dirs maxtext-external "$PARAM_DIR"
 # alternatively: $ gcloud storage cp -r "gs://maxtext-external/$MODEL_NAME" $PARAM_DIR
 
-# Convert it to MaxText(orbax) format - scanned ckpt
-JAX_PLATFORMS=cpu python3 -m MaxText.llama_or_mistral_ckpt --base-model-path="$PARAM_DIR/$MODEL_NAME" --model-size=mixtral-8x22b --maxtext-model-path=${BASE_OUTPUT_PATH}/${MODEL_VARIATION}/scanned_ckpt/
+# Convert it to maxtext(orbax) format - scanned ckpt
+JAX_PLATFORMS=cpu python3 -m maxtext.llama_or_mistral_ckpt --base-model-path="$PARAM_DIR/$MODEL_NAME" --model-size=mixtral-8x22b --maxtext-model-path=${BASE_OUTPUT_PATH}/${MODEL_VARIATION}/scanned_ckpt/
 echo "Wrote MaxText compatible scanned checkpoint to ${BASE_OUTPUT_PATH}/${MODEL_VARIATION}/scanned_ckpt"
 
 # unmount the gcsfuse directory

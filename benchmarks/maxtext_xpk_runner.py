@@ -102,7 +102,7 @@ class WorkloadConfig:
   generate_metrics_and_upload_to_big_query: bool = True
   hardware_id: str = 'v6e'
   metrics_gcs_file: str = ''
-  base_config: str = os.path.join("MaxText", "configs", "base.yml")
+  base_config: str = os.path.join("maxtext", "configs", "base.yml")
   topology: str = dataclasses.field(init=False)
   num_devices_per_slice: int = dataclasses.field(init=False)
   db_project: str = ""
@@ -353,7 +353,7 @@ def _build_args_from_config(wl_config: WorkloadConfig) -> dict:
           "xla_flags": f"'{xla_flags_str}'",
           "dataset": dataset,
           "run_type": "maxtext-xpk",
-          "config_file": os.path.join("MaxText", "configs", "base.yml"),
+          "config_file": os.path.join("maxtext", "configs", "base.yml"),
           "topology": wl_config.topology,
           "tuning_params": f"'{tuning_params_str}'",
           "db_project": wl_config.db_project,
@@ -427,7 +427,7 @@ def build_user_command(
       'export ENABLE_PATHWAYS_PERSISTENCE=1 &&',
       f'export JAX_PLATFORMS={jax_platforms} &&',
       'export ENABLE_PJRT_COMPATIBILITY=true &&',
-      f'{hlo_dump} python3 -m MaxText.train {os.path.join("MaxText", "configs", "base.yml")}',
+      f'{hlo_dump} python3 -m maxtext.train {os.path.join("maxtext", "configs", "base.yml")}',
       f'{config_tuning_params}',
       f'steps={wl_config.num_steps}',
       f'model_name={wl_config.model.model_type}',

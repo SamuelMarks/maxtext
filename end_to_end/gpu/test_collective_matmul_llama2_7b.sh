@@ -40,8 +40,8 @@ export XLA_FLAGS="--xla_dump_hlo_as_text
     --xla_gpu_threshold_for_windowed_einsum_mib=0
     --xla_gpu_multi_streamed_windowed_einsum=true"
 
-python3 -m MaxText.train \
-    MaxText/configs/base.yml \
+python3 -m maxtext.train \
+    src/maxtext/configs/base.yml \
     model_name=${MODEL} \
     per_device_batch_size=0.125 \
     steps=1 \

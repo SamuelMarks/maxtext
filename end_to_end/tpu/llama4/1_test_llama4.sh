@@ -1,15 +1,15 @@
 #!/bin/bash
 
 # This file, combined with step 2 in the same directory, runs on daily basis and demonstrates:
-# 1. Converts the Llama4-Maverick HuggingFace checkpoint to MaxText (Orbax) format using a CPU VM.
-# 2. Takes the MaxText (unscanned Orbax) checkpoint to run inference on a TPU VM.
+# 1. Converts the Llama4-Maverick HuggingFace checkpoint to maxtext (Orbax) format using a CPU VM.
+# 2. Takes the maxtext (unscanned Orbax) checkpoint to run inference on a TPU VM.
 
-# The flow of this file is to convert the Llama4 (Scout/Maverick) HuggingFace checkpoint to MaxText (Orbax) format using a CPU VM.
+# The flow of this file is to convert the Llama4 (Scout/Maverick) HuggingFace checkpoint to maxtext (Orbax) format using a CPU VM.
 
 # Example Usage: export BASE_OUTPUT_PATH=/path/to/GCS/bucket; export MODEL_VARIATION=llama4-17b-[16e/128e]; bash end_to_end/tpu/llama4/1_test_llama4.sh
 # Use the same BASE_OUTPUT_PATH and MODEL_VARIATION for both 1_test_llama4.sh & 1_test_llama4.sh.
 
-# In order to generate the Llama4 golden logits, please see this script: MaxText/scratch_code/golden_llama4_17b_16e_128e_export.ipynb
+# In order to generate the Llama4 golden logits, please see this script: maxtext/scratch_code/golden_llama4_17b_16e_128e_export.ipynb
 
 set -ex
 idx=$(date +%Y-%m-%d)
@@ -31,7 +31,7 @@ python3 -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
 # Step 1:
 # After downloading checkpoints, copy them to GCS bucket at $CHKPT_BUCKET \
-# Non-Googlers please remember to use separate GCS paths for uploading model weights from HuggingFace ($CHKPT_BUCKET) and MaxText compatible weights
+# Non-Googlers please remember to use separate GCS paths for uploading model weights from HuggingFace ($CHKPT_BUCKET) and maxtext compatible weights
 # ($MODEL_BUCKET). Non-Googlers please remember to point these variables to GCS buckets that you own, this script uses internal buckets for testing.
 # You can use the HuggingFace checkpoint at https://huggingface.co/meta-llama/Llama-4-Maverick-17B-128E for Scout and
 # https://huggingface.co/meta-llama/Llama-4-Maverick-17B-128E for Maverick
@@ -43,5 +43,5 @@ gcloud storage cp -r ${CHKPT_BUCKET} /tmp
 
 export LOCATION_OF_HF_CHKPT_ON_DISK=/tmp/hf-checkpoint
 
-JAX_PLATFORMS=cpu python3 -m MaxText.llama4_ckpt_unscanned --base-model-path ${LOCATION_OF_HF_CHKPT_ON_DISK} --maxtext-model-path ${MODEL_BUCKET}/${idx}/unscanned --model-size ${MODEL_VARIATION} --huggingface-checkpoint True
+JAX_PLATFORMS=cpu python3 -m maxtext.llama4_ckpt_unscanned --base-model-path ${LOCATION_OF_HF_CHKPT_ON_DISK} --maxtext-model-path ${MODEL_BUCKET}/${idx}/unscanned --model-size ${MODEL_VARIATION} --huggingface-checkpoint True
 echo "Wrote MaxText compatible unscanned checkpoint to ${MODEL_BUCKET}/${idx}/unscanned"

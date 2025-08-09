@@ -1,10 +1,10 @@
 #!/bin/bash
 
 # This file, combined with step 1 in the same directory, runs on daily basis and demonstrates:
-# 1. Converts the Mistral PyTorch checkpoint to MaxText(orbax) format using a CPU VM.
-# 2. Takes the MaxText(orbax) checkpoint to run inference, fine-tuning, and pre-training on a TPU VM.
+# 1. Converts the Mistral PyTorch checkpoint to maxtext(orbax) format using a CPU VM.
+# 2. Takes the maxtext(orbax) checkpoint to run inference, fine-tuning, and pre-training on a TPU VM.
 
-# The flow of this file is to take the MaxText(orbax) checkpoint to run inference, fine-tuning, and pre-training on a TPU VM.
+# The flow of this file is to take the maxtext(orbax) checkpoint to run inference, fine-tuning, and pre-training on a TPU VM.
 # Please make sure you have run end_to_end/tpu/mixtral/8x22b/1_test_mixtral.sh before running commands from this file.
 
 # Example Usage: export BASE_OUTPUT_PATH=/path/to/GCS/bucket; bash end_to_end/tpu/mixtral/8x22b/2_test_mixtral.sh
@@ -23,7 +23,7 @@ export DATASET_PATH=gs://maxtext-dataset
 export TOKENIZER_PATH=assets/tokenizer.mistral-v3
 
 # Run pre-training without load_parameters_path - megablox implementation
-python3 -m MaxText.train MaxText/configs/base.yml \
+python3 -m maxtext.train src/maxtext/configs/base.yml \
   base_output_directory=${BASE_OUTPUT_PATH} dataset_path=${DATASET_PATH} \
   run_name=pre_training_megablox per_device_batch_size=4 enable_checkpointing=false \
   model_name=mixtral-8x22b ici_tensor_parallelism=1 ici_fsdp_parallelism=-1 \
@@ -32,7 +32,7 @@ python3 -m MaxText.train MaxText/configs/base.yml \
   weight_dtype=bfloat16 megablox=True sparse_matmul=True
 
 # Run pre-training without load_parameters_path - matmul implementation
-python3 -m MaxText.train MaxText/configs/base.yml \
+python3 -m maxtext.train src/maxtext/configs/base.yml \
   base_output_directory=${BASE_OUTPUT_PATH} dataset_path=${DATASET_PATH} \
   run_name=pre_training_matmul per_device_batch_size=4 enable_checkpointing=false \
   model_name=mixtral-8x22b ici_tensor_parallelism=1 ici_fsdp_parallelism=-1 \
@@ -41,7 +41,7 @@ python3 -m MaxText.train MaxText/configs/base.yml \
   weight_dtype=bfloat16 megablox=False sparse_matmul=False
 
 # Run pre-training without load_parameters_path - dropping implementation
-python3 -m MaxText.train MaxText/configs/base.yml \
+python3 -m maxtext.train src/maxtext/configs/base.yml \
   base_output_directory=${BASE_OUTPUT_PATH} dataset_path=${DATASET_PATH} \
   run_name=pre_training_dropping per_device_batch_size=4 enable_checkpointing=false \
   model_name=mixtral-8x22b ici_tensor_parallelism=1 ici_fsdp_parallelism=-1 \

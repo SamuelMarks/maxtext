@@ -40,7 +40,7 @@ USER = os.environ["USER"]
 BASE_OUTPUT_DIRECTORY = (
     f"gs://{USER}-{PROJECT}-{COUNTRY}/mcjax_long_run/"
 )
-# Generate your own runner image from MaxText repo.
+# Generate your own runner image from maxtext repo.
 RUNNER = f"gcr.io/{PROJECT}/{USER}_latest"
 
 MAX_RESTARTS = 10_000
