@@ -36,9 +36,8 @@ from flax.linen import partitioning as nn_partitioning
 from MaxText import maxtext_utils
 from MaxText import max_utils
 from MaxText import pyconfig
-from MaxText import maxtext_utils, pyconfig
 from MaxText.common_types import DECODING_ACTIVE_SEQUENCE_INDICATOR, MODEL_MODE_AUTOREGRESSIVE, MODEL_MODE_PREFILL, MODEL_MODE_TRAIN
-from MaxText.globals import PKG_DIR, has_tpu, has_gpu
+from MaxText.globals import PKG_DIR, tpu_present
 from MaxText.layers import attentions
 from MaxText.layers.attentions import Attention, MLA, ChunkedCausalMask
 
@@ -165,6 +164,7 @@ class BidirectionalBlockMaskTest(unittest.TestCase):
     )
     np.testing.assert_array_equal(combined_mask, expected_mask)
 
+
 class ChunkedCausalMaskTest(unittest.TestCase):
   """Test for the ChunkedCausalMask."""
 
@@ -290,15 +290,6 @@ class AttentionTest(parameterized.TestCase):
     )
     self.cfg = config
 
-    config_cp = pyconfig.initialize(
-        [sys.argv[0], os.path.join(PKG_DIR, "configs", "base.yml")],
-        **self.config_arguments,
-        ici_context_parallelism=4,  # use context parallelism of 4
-        context_parallel_load_balance=False,  # set load_balancing to False such that
-        # there's no need for reordering the input/output
-    )
-
-    self.cfg_cp = config_cp
     self.rng = jax.random.PRNGKey(0)
     self.nnx_rng = nnx.Rngs(params=0, dropout=jax.random.PRNGKey(42))
 
@@ -310,7 +301,7 @@ class AttentionTest(parameterized.TestCase):
     self.max_target_length = self.cfg.max_target_length
     self.max_prefill_predict_length = self.cfg.max_prefill_predict_length
     self.head_dim = self.cfg.head_dim
-    self.embed_dim = self.cfg.emb_dim
+    self.embed_dim = self.cfg.base_emb_dim
     self.dtype = self.cfg.dtype
     self.attention_type = self.cfg.attention_type
 
@@ -368,6 +359,7 @@ class AttentionTest(parameterized.TestCase):
     return lnx, decoder_segment_ids, decoder_positions
 
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_autoregression(self):
     prefill_length = self.cfg.max_prefill_predict_length
     decode_total_length = self.cfg.max_target_length
@@ -415,10 +407,12 @@ class AttentionTest(parameterized.TestCase):
       self.assertTrue(jax.numpy.allclose(mha_full_this_idx, mha_idx, rtol=1e-02, atol=1e-02, equal_nan=False))
 
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_model_mode_prefill_dtype_float32(self):
     self._test_model_mode_prefill_dtype(jnp.float32)
 
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_model_mode_prefill_dtype_bfloat16(self):
     """test model mode prefill for dtype bfloat16"""
     self._test_model_mode_prefill_dtype(jnp.bfloat16)
@@ -462,17 +456,17 @@ class AttentionTest(parameterized.TestCase):
     self.assertEqual(dtype, mha_prefill.dtype)
 
   @pytest.mark.tpu_only
-  @unittest.skipIf(not tpu_present, "TPU only")
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_tpu_kernel_attention_mha(self):
     self.tpu_kernel_attention_helper(self.num_kv_heads)
 
   @pytest.mark.tpu_only
-  @unittest.skipIf(not tpu_present, "TPU only")
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_tpu_kernel_attention_gqa(self):
     self.tpu_kernel_attention_helper(self.num_kv_heads // 2)
 
   @pytest.mark.tpu_only
-  @unittest.skipIf(not tpu_present, "TPU only")
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_tpu_kernel_attention_mqa(self):
     self.tpu_kernel_attention_helper(1)
 
@@ -587,6 +581,7 @@ class AttentionTest(parameterized.TestCase):
       },
   )
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_tpu_flash_attention_context_parallel(
       self, ici_context_parallelism, context_parallel_load_balance, ici_expert_parallelism, expert_shard_attention_option
   ):
@@ -645,6 +640,7 @@ class AttentionTest(parameterized.TestCase):
     )
 
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_dot_product_cache_axis_order(self):
     all_axis_orders = tuple(itertools.permutations(range(4)))
     for axis_order in random.choices(all_axis_orders, k=4):
@@ -747,6 +743,7 @@ class AttentionTest(parameterized.TestCase):
       )
 
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_dot_product_reshape_q(self):
     for compute_axis_order in [(0, 1, 2, 3), (0, 2, 1, 3)]:
       self._dot_product_attention_reshape_q(
@@ -1135,6 +1132,7 @@ class MLATest(parameterized.TestCase):
       {"testcase_name": "Default_Autoregression", "rope_type": "default"},
   )
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_autoregression(self, rope_type):
     cfg, mla = self.init_mla(self.config_arguments, rope_type)
     prefill_length = cfg.max_prefill_predict_length
@@ -1228,6 +1226,7 @@ class MLATest(parameterized.TestCase):
       },
   )
   @pytest.mark.tpu_only
+  @unittest.skipIf(not tpu_present, "TPU only test")
   def test_tpu_flash_attention_context_parallel(
       self, ici_context_parallelism, context_parallel_load_balance, ici_expert_parallelism, expert_shard_attention_option
   ):
