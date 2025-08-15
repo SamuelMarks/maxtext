@@ -26,7 +26,6 @@ orbax-checkpoint>=0.10.3
 pathwaysutils>=0.1.1
 pillow>=11.1.0
 pre-commit
-protobuf==3.20.3
 pyink
 pylint
 pytest

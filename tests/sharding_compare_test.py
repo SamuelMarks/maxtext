@@ -17,7 +17,7 @@
 
 import hashlib
 from MaxText.train_compile import get_shaped_inputs, get_topology_mesh, validate_config
-from MaxText.tests.sharding_dump import named_shardings_to_json, load_named_sharding_json, TEST_CASES
+from .sharding_dump import named_shardings_to_json, load_named_sharding_json, TEST_CASES
 from MaxText import pyconfig
 import pytest
 import os

@@ -16,6 +16,7 @@
 Integration tests for generating a decode-only checkpoint from a training checkpoint
 and then running decode with it.
 """
+
 from datetime import datetime
 import os
 import pytest
@@ -24,7 +25,7 @@ from MaxText.globals import PKG_DIR
 from MaxText.train import main as train_main
 from MaxText.decode import main as decode_main
 from MaxText.generate_param_only_checkpoint import main as generate_param_only_ckpt_main
-from MaxText.tests.integration_tests.checkpointing_test import get_checkpointing_command
+from .checkpointing_test import get_checkpointing_command
 
 
 def run_generate_param_only_checkpoint(hardware, attention_type, quantization):

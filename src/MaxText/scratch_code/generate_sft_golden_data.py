@@ -37,7 +37,7 @@ from trl import SFTConfig, SFTTrainer
 
 from MaxText import pyconfig
 from MaxText.globals import PKG_DIR
-from MaxText.tests.integration_tests.sft_trainer_correctness_test import get_maxtext_logits, get_token_log_probs, prepare_maxtext_inputs
+from tests.integration_tests.sft_trainer_correctness_test import get_maxtext_logits, get_token_log_probs, prepare_maxtext_inputs
 
 
 DATA = {

@@ -50,7 +50,7 @@ from MaxText.experimental.rl.grpo_trainer import grpo_loss_fn, _merge_grpo_state
 from MaxText.experimental.rl.grpo_utils import compute_log_probs
 from MaxText.globals import PKG_DIR
 from MaxText.layers import models
-from MaxText.tests.grpo_trainer_correctness_test import prepare_maxtext_inputs
+from .grpo_trainer_correctness_test import prepare_maxtext_inputs
 from MaxText.common_types import Array, MODEL_MODE_TRAIN
 
 

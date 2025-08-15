@@ -16,7 +16,7 @@
 
 
 from typing import Sequence
-from MaxText.tests.sharding_dump import TEST_CASES
+from .sharding_dump import TEST_CASES
 import os
 import subprocess
 from absl import app
