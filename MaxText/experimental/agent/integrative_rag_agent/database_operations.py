@@ -27,10 +27,13 @@ system. It includes functionalities for:
 """
 
 import sqlite3
-import numpy as np
-import faiss
 import pickle
-from config import rag_db_file
+
+import numpy as np
+
+import faiss
+
+from MaxText.experimental.agent.integrative_rag_agent.config import rag_db_file
 
 
 # -------- 1. Create DB --------

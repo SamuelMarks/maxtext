@@ -30,9 +30,21 @@ python get_components_in_hierarchical_order.py \
 ```
 """
 
+from collections import deque, defaultdict
+import argparse
 import copy
+import hashlib
+import json
+import logging
+import os
 
-from config import (
+from MaxText.experimental.agent.integrative_rag_agent import system_setup
+from MaxText.experimental.agent.integrative_rag_agent.prompts_integrative_rag import Dependency_Filter_Prompt
+from MaxText.experimental.agent.code_generation_agent.llm_agent import GeminiAgent
+from MaxText.experimental.agent.integrative_rag_agent.llm_rag_embedding_generation import get_code_embedding
+from MaxText.experimental.agent.integrative_rag_agent.database_operations import make_embedding_index, search_embedding
+from MaxText.experimental.agent.orchestration_agent.split_python_file import get_modules_in_order as get_file_components
+from MaxText.experimental.agent.integrative_rag_agent.config import (
     save_most_similar_block_for_debugging,
     similar_block_folder,
     dependency_filter_cache_file,
@@ -44,22 +56,6 @@ from config import (
     torch_jax_similar_dependency_cache_file,
     dependency_list_file_format,
 )
-
-import os, hashlib
-import sys
-import json
-import argparse
-from integrative_rag_agent import system_setup
-import logging
-
-# Add parent directory to path to allow imports from sibling directories
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from collections import deque, defaultdict
-from integrative_rag_agent.prompts_integrative_rag import Dependency_Filter_Prompt
-from code_generation_agent.llm_agent import GeminiAgent
-from integrative_rag_agent.llm_rag_embedding_generation import get_code_embedding
-from integrative_rag_agent.database_operations import make_embedding_index, search_embedding
-from orchestration_agent.SplitPythonFile import get_modules_in_order as get_file_components
 
 # --- Basic Configuration ---
 logging.basicConfig(
@@ -329,7 +325,7 @@ def sort_and_search_dependency(base_path, file_path, module):
     if comp_id not in file_analysis_cache:
       logger.info(f"---> Analyzing file: {comp_id}")
       try:
-        # Uses the function from SplitPythonFile.py
+        # Uses the function from split_python_file.py
         file_analysis_cache[comp_id] = get_file_components(
             file_url, module=comp_name, project_root=project_root, add_external_dependencies=True
         )
@@ -362,7 +358,9 @@ def sort_and_search_dependency(base_path, file_path, module):
         with open(dependency_list_file, "a") as f:
           f.write(f"--- Dependency for {comp_name}\n")
           f.write(
-              json.dumps(list(filter(lambda x: x not in processed_comp_ids, analysis["component_dependencies"][comp_name])))
+              json.dumps(
+                  list(filter(lambda x: x not in processed_comp_ids, analysis["component_dependencies"][comp_name]))
+              )
               + "\n"
           )
           f.write("\n\n\n\n\n")

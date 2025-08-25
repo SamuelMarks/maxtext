@@ -32,10 +32,8 @@ import requests
 import base64
 import dotenv
 
-# Add parent directory to path to allow imports from sibling directories
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from integrative_rag_agent import system_setup
-from integrative_rag_agent.config import repo_name, repo_owner, maxtext_code_block, block_for_rag
+from MaxText.experimental.agent.integrative_rag_agent import system_setup
+from MaxText.experimental.agent.integrative_rag_agent.config import repo_name, repo_owner, maxtext_code_block, block_for_rag
 
 dotenv.load_dotenv()
 

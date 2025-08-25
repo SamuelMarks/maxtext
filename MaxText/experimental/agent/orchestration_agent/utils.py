@@ -507,7 +507,11 @@ def get_absolute_imports(import_line, file_url, project_root="transformers"):
       for pkg, alies in packages_and_aliases
   ]
   pakages = [
-      "from " + import_path.removeprefix(base_url).removesuffix(".py").replace("/", ".") + " import " + pkg.strip() + alies
+      "from "
+      + import_path.removeprefix(base_url).removesuffix(".py").replace("/", ".")
+      + " import "
+      + pkg.strip()
+      + alies
       for import_path, pkg, alies in pakages
       if import_path is not None
   ]

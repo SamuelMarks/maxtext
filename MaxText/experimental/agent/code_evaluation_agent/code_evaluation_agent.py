@@ -48,18 +48,17 @@ Relevant Files:
   (to execute pytest and capture its results).
 - `code_generation_agent/llm_agent.py`: Contains the `GeminiAgent` class used
   to interact with the language model.
-- `orchestration_agent/Utils.py`: Contains `parse_python_code` for extracting
+- `orchestration_agent/utils.py`: Contains `parse_python_code` for extracting
   code from LLM responses.
 """
 import argparse
-import os, logging, sys
+import logging
+import os
 
-# Add parent directory to path to allow imports from sibling directories
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from code_evaluation_agent.prompt_code_evaluation import CodeEvaluation
-from code_evaluation_agent.utils import get_last_defined_module, run_pytest_capture_output
-from code_generation_agent.llm_agent import GeminiAgent
-from orchestration_agent.Utils import parse_python_code
+from MaxText.experimental.agent.code_evaluation_agent.prompt_code_evaluation import CodeEvaluation
+from MaxText.experimental.agent.code_evaluation_agent.utils import get_last_defined_module, run_pytest_capture_output
+from MaxText.experimental.agent.code_generation_agent.llm_agent import GeminiAgent
+from MaxText.experimental.agent.orchestration_agent.utils import parse_python_code
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s",
@@ -71,7 +70,9 @@ logger = logging.getLogger(__name__)
 
 
 parser = argparse.ArgumentParser(description="Code Evaluation Agent")
-parser.add_argument("--error_penalty", type=int, default=10, help="Penalty for errors in test case generation or execution.")
+parser.add_argument(
+    "--error_penalty", type=int, default=10, help="Penalty for errors in test case generation or execution."
+)
 parser.add_argument(
     "--pytorch_path",
     type=str,

@@ -21,21 +21,18 @@ into single modules.
 
 Example Invocation:
 
-python SplitPythonFile.py \
+python split_python_file.py \
   "https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py"
 """
 import ast
 import os.path
 import json
-import sys
 import hashlib
 import logging
 from collections import defaultdict, deque
 import argparse
 
-# Add parent directory to path to allow imports from sibling directories
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from orchestration_agent.Utils import get_github_file_content, get_absolute_imports, check_github_file_exists
+from MaxText.experimental.agent.orchestration_agent.utils import get_github_file_content, get_absolute_imports, check_github_file_exists
 
 logger = logging.getLogger("__name__")
 

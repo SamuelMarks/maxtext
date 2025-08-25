@@ -20,25 +20,23 @@ It handles both absolute and relative imports, and can optionally exclude condit
 Example Invocations:
 
 1. Analyze a specific entry file in a repository, excluding conditional imports (default):
-   python GetFilesInHierarchicalOrder.py \
+   python get_files_in_hierarchical_order.py \
      --base-path "https://github.com/huggingface/transformers/blob/main/src/" \
      --entry-file-path "https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py"
 
 2. Analyze a specific entry file, including all imports (even conditional ones):
-   python GetFilesInHierarchicalOrder.py \
+   python get_files_in_hierarchical_order.py \
      --base-path "https://github.com/huggingface/transformers/blob/main/src/" \
      --entry-file-path "https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py" \
      --no-exclude-conditional-imports
 """
-import ast, json
-import os
-import sys
 import argparse
+import ast
+import json
 import logging
 from collections import deque
-# Add parent directory to path to allow imports from sibling directories
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from orchestration_agent.Utils import find_cycle, check_github_file_exists, get_github_file_content, resolve_import_path
+
+from MaxText.experimental.agent.orchestration_agent.utils import find_cycle, check_github_file_exists, get_github_file_content, resolve_import_path
 
 # Set up basic configuration
 logging.basicConfig(

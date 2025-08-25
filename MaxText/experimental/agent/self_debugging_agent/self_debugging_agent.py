@@ -55,7 +55,7 @@ Relevant Files:
     and `run_pytest_capture_output`.
 -   `code_generation_agent/llm_agent.py`: The `GeminiAgent` class for language
     model interaction.
--   `orchestration_agent/Utils.py`: Contains `parse_python_code` for extracting
+-   `orchestration_agent/utils.py`: Contains `parse_python_code` for extracting
     code from LLM responses.
 -   `utils.py`: Provides utility functions like `save_in_file_and_check_code_syntax`
     and `parse_json_response`.
@@ -64,16 +64,14 @@ Relevant Files:
 import argparse
 import os
 import logging
-import sys
-# Add parent directory to path to allow imports from sibling directories
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from code_generation_agent.llm_agent import GeminiAgent
-from code_evaluation_agent.prompt_code_evaluation import CodeEvaluation
-from code_evaluation_agent.utils import get_last_defined_module, run_pytest_capture_output
-from orchestration_agent.Utils import parse_python_code
-from code_generation_agent.llm_code_generation import convert_code_from_torch_to_jax
-from self_debugging_agent.utils import save_in_file_and_check_code_syntax, parse_json_response, smartly_copy_code
-from self_debugging_agent.prompt_debugging import CodeDebugging
+
+from MaxText.experimental.agent.code_generation_agent.llm_agent import GeminiAgent
+from MaxText.experimental.agent.code_evaluation_agent.prompt_code_evaluation import CodeEvaluation
+from MaxText.experimental.agent.code_evaluation_agent.utils import get_last_defined_module, run_pytest_capture_output
+from MaxText.experimental.agent.orchestration_agent.utils import parse_python_code
+from MaxText.experimental.agent.code_generation_agent.llm_code_generation import convert_code_from_torch_to_jax
+from MaxText.experimental.agent.self_debugging_agent.utils import save_in_file_and_check_code_syntax, parse_json_response, smartly_copy_code
+from MaxText.experimental.agent.self_debugging_agent.prompt_debugging import CodeDebugging
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)-8s %(message)s",
@@ -89,14 +87,18 @@ parser = argparse.ArgumentParser(description="Code Evaluation Agent")
 parser.add_argument(
     "--code_syntax_error_tries", type=int, default=5, help="for how many times to tries in case wrong syntax."
 )
-parser.add_argument("--code_debug_error_tries", type=int, default=5, help="for how many times to tries in case code failed.")
+parser.add_argument(
+    "--code_debug_error_tries", type=int, default=5, help="for how many times to tries in case code failed."
+)
 parser.add_argument(
     "--code_generation_tries",
     type=int,
     default=2,
     help="for how many times to tries in case code failed and debugging also failed.",
 )
-parser.add_argument("--error_penalty", type=int, default=10, help="Penalty for errors in test case generation or execution.")
+parser.add_argument(
+    "--error_penalty", type=int, default=10, help="Penalty for errors in test case generation or execution."
+)
 parser.add_argument(
     "--module_name",
     type=str,
@@ -196,9 +198,16 @@ def generate_test_case(python_file, entry_module, python_code, jax_code, jax_fil
   """
   prompt = CodeEvaluation["TESTCASE"]
   python_code = (
-      "from " + ".".join(python_file.split("/")[1:]).removesuffix(".py") + " import " + entry_module + "\n\n" + python_code
+      "from "
+      + ".".join(python_file.split("/")[1:]).removesuffix(".py")
+      + " import "
+      + entry_module
+      + "\n\n"
+      + python_code
   )
-  jax_code = "from " + ".".join(jax_file.split("/")[1:]).removesuffix(".py") + " import " + entry_module + "\n\n" + jax_code
+  jax_code = (
+      "from " + ".".join(jax_file.split("/")[1:]).removesuffix(".py") + " import " + entry_module + "\n\n" + jax_code
+  )
   prompt = prompt.replace("<module.path.to.pytorch_code>", python_code)
   prompt = prompt.replace("<module.path.to.jax_code>", jax_code)
   prompt = prompt.replace("<function_or_class_to_call>", entry_module)
@@ -276,9 +285,14 @@ def code_debugging(python_file, jax_file, test_file_path, last_output, code_hist
       if try_count == 0:
         prompt = CodeDebugging["CODE"]
         python_code = (
-            "from " + ".".join(python_file.split("/")[1:]).replace(".py", " import " + entry_module) + "\n\n" + python_code
+            "from "
+            + ".".join(python_file.split("/")[1:]).replace(".py", " import " + entry_module)
+            + "\n\n"
+            + python_code
         )
-        jax_code = "from " + ".".join(jax_file.split("/")[1:]).replace(".py", " import " + entry_module) + "\n\n" + jax_code
+        jax_code = (
+            "from " + ".".join(jax_file.split("/")[1:]).replace(".py", " import " + entry_module) + "\n\n" + jax_code
+        )
         prompt = prompt.replace("<module.path.to.pytorch_code>", python_code)
         prompt = prompt.replace("<module.path.to.jax_code>", jax_code)
         prompt = prompt.replace("<function_or_class_to_call>", entry_module)

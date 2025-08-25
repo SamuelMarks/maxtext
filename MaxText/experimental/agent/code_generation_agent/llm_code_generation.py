@@ -75,13 +75,11 @@ from dotenv import load_dotenv  # If this is not available, try ``pip install py
 load_dotenv()
 import os
 import logging
-import sys
 import argparse
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from code_generation_agent.llm_agent import GeminiAgent
-from orchestration_agent.Utils import parse_python_code
-from code_generation_agent.prompt_code_generation import CodeGeneration
+from MaxText.experimental.agent.code_generation_agent.llm_agent import GeminiAgent
+from MaxText.experimental.agent.orchestration_agent.utils import parse_python_code
+from MaxText.experimental.agent.code_generation_agent.prompt_code_generation import CodeGeneration
 
 # Set up basic configuration
 logging.basicConfig(

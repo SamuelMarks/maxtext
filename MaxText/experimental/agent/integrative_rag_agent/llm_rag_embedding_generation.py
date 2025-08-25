@@ -46,26 +46,24 @@ python llm_rag_embedding_generation.py --override-existing-records
 ```
 """
 
-import os
-import sys
-import time
 import argparse
-import pickle, numpy as np
-import json
-import sqlite3
 import hashlib
+import json
+import os
+import pickle
+import sqlite3
+import time
 
-# Add parent directory to path to allow imports from sibling directories
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import numpy as np
 
-from integrative_rag_agent import system_setup
-from integrative_rag_agent.config import maxtext_code_block, maxtext_block_description, enable_cache
-from code_generation_agent.llm_agent import GeminiAgent
-from integrative_rag_agent.llm_rag_agent import EmbeddingAgent
-from code_evaluation_agent.utils import get_last_defined_module
-from orchestration_agent.SplitPythonFile import get_modules_from_file
-from integrative_rag_agent.database_operations import save_document, load_all_documents
-from integrative_rag_agent.prompts_integrative_rag import Description_Prompt, CODE_DESCRIPTION
+from MaxText.experimental.agent.code_evaluation_agent.utils import get_last_defined_module
+from MaxText.experimental.agent.code_generation_agent.llm_agent import GeminiAgent
+from MaxText.experimental.agent.integrative_rag_agent import system_setup
+from MaxText.experimental.agent.integrative_rag_agent.config import maxtext_code_block, maxtext_block_description, enable_cache
+from MaxText.experimental.agent.integrative_rag_agent.database_operations import save_document, load_all_documents
+from MaxText.experimental.agent.integrative_rag_agent.llm_rag_agent import EmbeddingAgent
+from MaxText.experimental.agent.integrative_rag_agent.prompts_integrative_rag import Description_Prompt, CODE_DESCRIPTION
+from MaxText.experimental.agent.orchestration_agent.split_python_file import get_modules_from_file
 
 
 # Create cache table if it doesn't exist

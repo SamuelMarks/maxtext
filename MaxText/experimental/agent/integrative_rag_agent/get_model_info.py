@@ -63,7 +63,9 @@ def get_model_info(model_id: str):
 if __name__ == "__main__":
 
   parser = argparse.ArgumentParser(description="Get model info from HuggingFace model id")
-  parser.add_argument("--model-id", type=str, default="Qwen/Qwen3-235B-A22B-Thinking-2507-FP8", help="HuggingFace model id")
+  parser.add_argument(
+      "--model-id", type=str, default="Qwen/Qwen3-235B-A22B-Thinking-2507-FP8", help="HuggingFace model id"
+  )
   args = parser.parse_args()
   model_id = args.model_id
   info = get_model_info(model_id)

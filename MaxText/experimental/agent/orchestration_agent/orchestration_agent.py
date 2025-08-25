@@ -23,21 +23,19 @@ first by file-level dependencies, and then by component-level dependencies withi
 
 Example Invocation:
 
-python orchestrationAgent.py \
+python orchestration_agent.py \
   --base-path "https://github.com/huggingface/transformers/blob/main/src/" \
   --entry-file-path "https://github.com/huggingface/transformers/blob/main/src/transformers/models/llama/modeling_llama.py" \
   --no-exclude-conditional-imports
 """
 import json
 import os.path
-import sys
 import argparse
 import logging
-# Add parent directory to path to allow imports from sibling directories
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from orchestration_agent.Utils import check_github_file_exists
-from orchestration_agent.GetFilesInHierarchicalOrder import get_dependency_sorted_files
-from orchestration_agent.SplitPythonFile import get_modules_in_order
+
+from MaxText.experimental.agent.orchestration_agent.utils import check_github_file_exists
+from MaxText.experimental.agent.orchestration_agent.get_files_in_hierarchical_order import get_dependency_sorted_files
+from MaxText.experimental.agent.orchestration_agent.split_python_file import get_modules_in_order
 
 # Set up basic configuration
 logging.basicConfig(
