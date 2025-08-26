@@ -44,6 +44,7 @@ load_full_state_path: ""
 # async_checkpointing is true, else a synchronous one is used. If you have
 # problems with the checkpointer we recommend trying the synchronous one.
 enable_checkpointing: True
+save_checkpoint_on_completion: True
 async_checkpointing: True
 checkpoint_period: 10_000
 # enables one replica to read the ckpt then broadcast to the rest
@@ -177,7 +178,7 @@ norm_topk_prob: False # Boolean to enable the top-k probability normalization. Q
 expert_shard_attention_option: "fsdp"
 
 # deepseek moe
-base_moe_mlp_dim: 7168 # intermediate dimension at MoE layer (use base_mlp_dim if not DeepSeek style)
+base_moe_mlp_dim: 7168 # intermediate dimension at MoE layer. For a fully MoE model, base_mlp_dim must be equal to base_moe_mlp_dim.
 first_num_dense_layers: 0 # number of initial dense layers in the model
 shared_experts: 1
 routed_scaling_factor: 1.0 # scaling factor for routing scores
@@ -371,7 +372,7 @@ logical_axis_rules: [
                       ['kv_lora', ['fsdp', 'sequence', 'context', 'tensor_transpose', 'expert']],
                       ['kv_lora', ['fsdp', 'fsdp_transpose', 'sequence', 'context', 'expert']],
                       ['kv_lora', ['fsdp', 'sequence', 'context', 'expert']],
-                      ['norm', ['tensor', 'tensor_transpose', 'tensor_sequence']],
+                      ['norm', ['tensor', 'tensor_transpose']],
                       ['layers', 'stage'],
                       ['kv', []],
                       ['kv_head_dim', []],
@@ -547,8 +548,9 @@ dump_step: -1 # Dump modules at the given step if set to a positive integer.
 dump_hlo_local_dir: "/tmp/xla_dump/"
 dump_hlo_delete_local_after: True # Cleans local directory after its uploaded
 dump_hlo_gcs_dir: "" # Defaults to {base_output_directory}/{run_name}/xla_dump
+dump_hlo_local_module_name: "jit_train_step" # Filter saving modules locally by this string. Set to empty string to remove any filter.
 dump_hlo_module_name: "jit_train_step" # Filter uploading modules by this string. Set to empty string to remove any filter.
-dump_hlo_xla_flags: "" # Defaults to "--xla_dump_to={dump_hlo_local_dir} --xla_dump_hlo_module_re={dump_hlo_module_name} --xla_dump_large_constants"
+dump_hlo_xla_flags: "" # Defaults to "--xla_dump_to={dump_hlo_local_dir} --xla_dump_hlo_module_re={dump_hlo_local_module_name} --xla_dump_large_constants"
 dump_hlo_upload_all: False # If true all hosts dump HLO, false only jax.process_index()==0
 # All hosts should have identical HLO for SPMD programs, however we have encountered some bugs
 # where this is not the case and it is helpful to compare HLO across hosts.

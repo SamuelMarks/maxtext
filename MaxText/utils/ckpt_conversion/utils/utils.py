@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+""" Checkpoint conversion utility functions. """
+
 import contextlib
 import io
 import os
@@ -19,7 +21,7 @@ import tempfile
 import time
 import json
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional, List, Dict, Tuple, Any
+from typing import Any
 
 import jax
 import jax.tree_util
@@ -60,6 +62,12 @@ HF_IDS = {
     "qwen3-8b": "Qwen/Qwen3-8B",
     "qwen3-14b": "Qwen/Qwen3-14B",
     "qwen3-32b": "Qwen/Qwen3-32B",
+    "llama3.1-8b": "meta-llama/Llama-3.1-8B",
+    "llama3.1-8b-Instruct": "meta-llama/Llama-3.1-8B-Instruct",
+    "llama3.1-70b": "meta-llama/Llama-3.1-70B",
+    "llama3.1-405b": "meta-llama/Llama-3.1-405B",
+    "qwen3-30b-a3b": "Qwen/Qwen3-30B-A3B-Thinking-2507",
+    "qwen3-480b-a35b": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
 }
 
 
@@ -77,9 +85,9 @@ def _get_local_directory(output_dir: str) -> str:
 def process_leaf_param(
     path_tuple: Any,
     leaf_value: jax.Array,
-    param_map_local: Dict[str, Any],
-    shape_map_local: Dict[str, Any],
-    hook_fn_map_local: Dict[str, Any],
+    param_map_local: dict[str, Any],
+    shape_map_local: dict[str, Any],
+    hook_fn_map_local: dict[str, Any],
     current_config: Any,
 ) -> list[tuple[str, np.ndarray]]:
   """Processes a single leaf from the MaxText parameter tree."""
@@ -128,30 +136,69 @@ def process_leaf_param(
     numpy_weight = convert_jax_weight_to_numpy(processed_weight)
     output_weights.append((hf_path, numpy_weight))
   else:  # Stacked MaxText weight
-    if not (leaf_value.ndim > 0 and leaf_value.shape[current_config.param_scan_axis] == len(hf_target_paths)):
-      max_logging.log(
-          f"Warning: Mismatch for stacked layer {maxtext_param_key}. MaxText shape {leaf_value.shape}, expected "
-          f"{len(hf_target_paths)} slices on axis {current_config.param_scan_axis}. Skipping."
+    # This now handles three cases:
+    # 1. Scanned MoE layers (2D list of targets from a tensor stacked on expert and layer axes)
+    # 2. Unscanned MoE layers (1D list of targets from a tensor stacked only on the expert axis)
+    # 3. Standard scanned layers (1D list of targets from a tensor stacked only on the layer axis)
+
+    is_scanned_moe_layer = isinstance(hf_target_paths[0], list)
+
+    if is_scanned_moe_layer:
+      # Case 1: Scanned MoE layer, e.g., from 'layers-moe_block-wi_0'.
+      # The tensor is stacked on expert and layer axes. We slice experts first, then layers.
+      # MaxText format is (experts, layers, ...), so expert axis is 0, layer axis is 1.
+      expert_axis_to_slice = 0
+
+      # Outer loop for experts
+      for expert_idx, expert_paths_for_layer in enumerate(hf_target_paths):
+        # Slice along the expert axis to get the tensor for the current expert across all layers.
+        expert_tensor_slice = jax.lax.index_in_dim(leaf_value, expert_idx, axis=expert_axis_to_slice, keepdims=False)
+
+        # Inner loop for layers
+        for layer_idx, hf_path in enumerate(expert_paths_for_layer):
+          if hf_path not in shape_map_local:
+            max_logging.log(f"Warning: HF path '{hf_path}' not found. Skipping.")
+            continue
+
+          # Slice the expert tensor along the layer axis to get the final individual weight.
+          layer_tensor_slice = jax.lax.index_in_dim(
+              expert_tensor_slice, layer_idx, axis=0, keepdims=False
+          )  # axis is 0 on the new sliced tensor
+
+          target_hf_shape = shape_map_local[hf_path]
+          processed_slice = apply_hook_fns(layer_tensor_slice, target_hf_shape, current_hook_fns)
+          numpy_slice = convert_jax_weight_to_numpy(processed_slice)
+          output_weights.append((hf_path, numpy_slice))
+    else:
+      # Case 2 or 3: The source tensor is stacked on a single axis.
+      # We determine if it's an unscanned MoE (expert axis) or standard scanned (layer axis).
+      is_unscanned_moe = "moe_block" in maxtext_param_key and any(
+          f"_{i}-" in maxtext_param_key for i in range(current_config.base_num_decoder_layers)
       )
-      return []
-    for i, hf_path in enumerate(hf_target_paths):
-      if hf_path not in shape_map_local:
-        max_logging.log(
-            f"Warning: HF path '{hf_path}' for slice {i} of MaxText key '{maxtext_param_key}' not found in shape_map. "
-            f"Skipping slice."
-        )
-        continue
-      current_slice_target_hf_shape = shape_map_local[hf_path]
-      weight_slice = jax.lax.index_in_dim(leaf_value, i, axis=current_config.param_scan_axis, keepdims=False)
-      processed_slice = weight_slice
-      if current_hook_fns:
-        processed_slice = apply_hook_fns(processed_slice, current_slice_target_hf_shape, current_hook_fns)
-      numpy_slice = convert_jax_weight_to_numpy(processed_slice)
-      output_weights.append((hf_path, numpy_slice))
+
+      if is_unscanned_moe:
+        # Case 2: Unscanned MoE layer, e.g., from 'layers_0-moe_block-wi_0'.
+        # The tensor is stacked ONLY on the expert axis.
+        axis_to_slice = 0  # Assuming expert is axis 0.
+      else:
+        # Case 3: Standard scanned layer.
+        # The tensor is stacked ONLY on the layer axis.
+        axis_to_slice = current_config.param_scan_axis
+
+      for i, hf_path in enumerate(hf_target_paths):
+        if hf_path not in shape_map_local:
+          max_logging.log(f"Warning: HF path '{hf_path}' not found. Skipping.")
+          continue
+
+        target_hf_shape = shape_map_local[hf_path]
+        weight_slice = jax.lax.index_in_dim(leaf_value, i, axis=axis_to_slice, keepdims=False)
+        processed_slice = apply_hook_fns(weight_slice, target_hf_shape, current_hook_fns)
+        numpy_slice = convert_jax_weight_to_numpy(processed_slice)
+        output_weights.append((hf_path, numpy_slice))
   return output_weights
 
 
-def convert_jax_weight_to_numpy(weight: "jax.Array", dtype_str: Optional[str] = None) -> np.ndarray:
+def convert_jax_weight_to_numpy(weight: "jax.Array", dtype_str: None | str = None) -> np.ndarray:
   """Converts a JAX array to a NumPy array with the specified dtype."""
   final_dtype_str = str(weight.dtype) if dtype_str is None else dtype_str
   # JAX dtypes like 'bfloat16', 'float32' are understood by np.dtype()
@@ -195,7 +242,11 @@ def create_huggingface_hub_repo_if_not_exist(repo_id, repo_type):
 
 
 def save_config_file(
-    config, local_path_to_save_to: str, output_dir_final: str, file_name: str, remove_local_copy_after_upload: bool = False
+    config,
+    local_path_to_save_to: str,
+    output_dir_final: str,
+    file_name: str,
+    remove_local_copy_after_upload: bool = False,
 ):
   """Saves the model configuration file(config.json)."""
   if jax.process_index() == 0:
@@ -229,10 +280,10 @@ def save_config_file(
 
 
 def shard_checkpoint(
-    weights_dict: Dict[str, Array],
+    weights_dict: dict[str, Array],
     max_shard_size: int = DEFAULT_MAX_SHARD_SIZE,
     weights_name: str = "model.safetensors",
-) -> Tuple[Dict[str, Dict[str, Array]], Optional[Dict]]:
+) -> tuple[dict[str, dict[str, Array]], None | dict]:
   """Shards a model checkpoint into smaller pieces based on size constraints.
 
   Args:
@@ -241,12 +292,12 @@ def shard_checkpoint(
       weights_name: Base filename for the shards
 
   Returns:
-      Tuple of (sharded weights dict, optional index dict)
+      tuple of (sharded weights dict, optional index dict)
       Index contains metadata and weight mapping information
   """
   # Track current shard and accumulated sizes
-  current_shard: Dict[str, Array] = {}
-  shards: List[Dict[str, Array]] = [current_shard]
+  current_shard: dict[str, Array] = {}
+  shards: list[dict[str, Array]] = [current_shard]
   current_size = 0
   total_size = 0
 
@@ -394,7 +445,9 @@ def save_weight_files(
         future.result()
 
     # Save index file
-    save_index_file(index, local_dir_to_save_to, output_dir_final, SAFE_TENSORS_INDEX_FILE, remove_local_copy_after_upload)
+    save_index_file(
+        index, local_dir_to_save_to, output_dir_final, SAFE_TENSORS_INDEX_FILE, remove_local_copy_after_upload
+    )
 
 
 @contextlib.contextmanager
@@ -417,9 +470,9 @@ def get_local_save_path_manager(output_dir: str):
 
 
 def save_model_files(
-    weight_arrays: Dict,
+    weight_arrays: dict,
     config,  # HF config object
-    tokenizer: Optional[Any],  # transformers.PreTrainedTokenizerBase
+    tokenizer: None | Any,  # transformers.PreTrainedTokenizerBase
     processor,
     output_dir: str,
     parallel_threads=8,

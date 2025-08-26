@@ -1,16 +1,18 @@
-# Copyright 2023–2025 Google LLC
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""
+Copyright 2025 Google LLC
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+     https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+"""
 
 """
 This file implements an agent that evaluates the correctness of JAX code
@@ -51,11 +53,11 @@ Relevant Files:
 """
 import argparse
 import os, logging, sys
-from prompt_code_evaluation import CodeEvaluation
-from utils import get_last_defined_module, run_pytest_capture_output
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
+# Add parent directory to path to allow imports from sibling directories
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from code_evaluation_agent.prompt_code_evaluation import CodeEvaluation
+from code_evaluation_agent.utils import get_last_defined_module, run_pytest_capture_output
 from code_generation_agent.llm_agent import GeminiAgent
 from orchestration_agent.Utils import parse_python_code
 
@@ -70,9 +72,24 @@ logger = logging.getLogger(__name__)
 
 parser = argparse.ArgumentParser(description="Code Evaluation Agent")
 parser.add_argument("--error_penalty", type=int, default=10, help="Penalty for errors in test case generation or execution.")
-parser.add_argument("--pytorch_path", type=str, default="../code_generation_agent/dataset/PyTorch/", help="Path to the directory containing PyTorch files.")
-parser.add_argument("--jax_path", type=str, default="../code_generation_agent/dataset/jax_converted/", help="Path to the directory containing JAX files.")
-parser.add_argument("--testcase_path", type=str, default="../code_generation_agent/dataset/test_cases/", help="Path to the directory for generated test cases.")
+parser.add_argument(
+    "--pytorch_path",
+    type=str,
+    default="../code_generation_agent/dataset/PyTorch/",
+    help="Path to the directory containing PyTorch files.",
+)
+parser.add_argument(
+    "--jax_path",
+    type=str,
+    default="../code_generation_agent/dataset/jax_converted/",
+    help="Path to the directory containing JAX files.",
+)
+parser.add_argument(
+    "--testcase_path",
+    type=str,
+    default="../code_generation_agent/dataset/test_cases/",
+    help="Path to the directory for generated test cases.",
+)
 parser.add_argument("--overwrite_existing_files", action="store_true", help="Overwrite existing test case files.")
 args = parser.parse_args()
 
@@ -178,7 +195,7 @@ def run_code_evaluation():
   all_passed, all_failed, total_files = 0, 0, 0
   for python_file, jax_file in zip(*get_file_pairs(pytorch_path, jax_path)):
     num_passed, num_failed = make_test_case_and_run(python_file, jax_file)
-    if num_passed == num_failed == 0: # when the code cannot be executed
+    if num_passed == num_failed == 0:  # when the code cannot be executed
       # Penalty in case of issue in test case and not executed
       num_failed = error_penalty
     logger.info(f"{python_file.split('/')[-1]} have {num_passed} cases passed and {num_failed} cases failed")

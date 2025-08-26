@@ -15,7 +15,7 @@
 """Create an Orbax CheckpointManager with specified (Async or not) Checkpointer."""
 
 import time
-from typing import Any, Optional, Union
+from typing import Any
 
 from absl import flags
 from etils import epath
@@ -29,6 +29,7 @@ from MaxText.multihost_dataloading import MultiHostDataLoadIterator
 import numpy as np
 import orbax.checkpoint as ocp
 from orbax.checkpoint import v1 as ocp_v1
+from orbax.checkpoint._src.arrays import sharding as sharding_utils
 import orbax.checkpoint.experimental.emergency.checkpoint_manager as emergency_checkpoint_manager
 import orbax.checkpoint.experimental.emergency.replicator_checkpoint_manager as emergency_replicator_checkpoint_manager
 # pylint: disable=too-many-positional-arguments
@@ -59,8 +60,8 @@ def _load_full_state_from_path(
     enable_orbax_v1: whether to use orbax v1 or the previously supported v0.
     checkpoint_conversion_fn: user-provided function to convert checkpoint to
       maxtext-supported state.
-    source_checkpoint_layout: String representation of the checkpoint layout
-      of the source checkpoint.
+    source_checkpoint_layout: String representation of the checkpoint layout of
+      the source checkpoint.
 
   Returns:
     The loaded state.
@@ -70,27 +71,39 @@ def _load_full_state_from_path(
     if source_checkpoint_layout == "orbax":
       context = ocp_v1.Context(
           checkpoint_layout=ocp_v1.options.CheckpointLayout.ORBAX
-          )
+      )
+      with context:
+        return ocp_v1.load_pytree(path, abstract_unboxed_pre_state)
     elif source_checkpoint_layout == "safetensors":
       context = ocp_v1.Context(
           checkpoint_layout=ocp_v1.options.CheckpointLayout.SAFETENSORS
+      )
+      with context:
+        metadata = ocp_v1.pytree_metadata(path)
+        simple_abstract_state = metadata.metadata
+        shardings = sharding_utils.construct_maximal_shardings(
+            simple_abstract_state
+        )
+
+        def combine_sharding(sds, shardings):
+          return jax.ShapeDtypeStruct(
+              shape=sds.shape, dtype=sds.dtype, sharding=shardings
           )
+
+        sharded_abstract_state = jax.tree.map(
+            combine_sharding, simple_abstract_state, shardings
+        )
+        pre_transformed_state = ocp_v1.load_pytree(
+            path, sharded_abstract_state
+        )
+      state = checkpoint_conversion_fn(pre_transformed_state)
+      return state
     else:
       raise ocp_v1.errors.InvalidLayoutError(
           f"Unknown checkpoint layout: {source_checkpoint_layout}"
-          )
-    if ocp_v1.is_orbax_checkpoint(path):
-      state = ocp_v1.load_pytree(path, abstract_unboxed_pre_state)
-    else:
-      with context:
-        pre_transformed_state = ocp_v1.load_pytree(path)
-      state = checkpoint_conversion_fn(pre_transformed_state)
-      # TODO(zachmeyers): Add call to place on devices, after sharding logic
-      # is implemented on Orbax side.
-    return state
+      )
   else:
-    # This is the original v0 logic that should be restored. For the edge case
-    # where a CheckpointManager is present but empty.
+    # Original v0 logic.
     p = epath.Path(path)
     return ocp.StandardCheckpointer().restore(p, abstract_unboxed_pre_state)
 
@@ -100,7 +113,7 @@ def create_orbax_checkpoint_manager(
     enable_checkpointing: bool,
     use_async: bool,
     save_interval_steps: int,
-    dataset_type: Optional[str] = "tfds",
+    dataset_type: None | str = "tfds",
     orbax_logger: Any = None,  # pytype: disable=attribute-error
     use_ocdbt: bool = True,
     use_zarr3: bool = True,
@@ -275,14 +288,14 @@ def _replica_devices(device_array: np.ndarray, replica_axis_idx: int):
 
 
 def load_state_if_possible(
-    checkpoint_manager: Union[CheckpointManager, None],
-    data_iterator: Union[MultiHostDataLoadIterator, None],
+    checkpoint_manager: CheckpointManager | None,
+    data_iterator: MultiHostDataLoadIterator | None,
     load_parameters_from_path: str,
     load_full_state_from_path: str,
     checkpoint_storage_concurrent_gb: int,
     abstract_unboxed_pre_state: train_state.TrainState,
-    enable_single_replica_ckpt_restoring: Optional[bool] = False,
-    dataset_type: Optional[str] = "tfds",
+    enable_single_replica_ckpt_restoring: bool | None = False,
+    dataset_type: str | None = "tfds",
     step: int = -1,  # -1 means latest
     use_ocdbt=True,
     use_zarr3=True,
@@ -355,9 +368,15 @@ def load_state_if_possible(
         # or EmergencyReplicatorCheckpointManager. The '_' indicates that 'dataset_type' and
         # 'data_iterator' can be any value and aren't used in this pattern.
         case (checkpoint_manager, _, _) if isinstance(
-            checkpoint_manager, (EmergencyCheckpointManager, EmergencyReplicatorCheckpointManager)
+            checkpoint_manager,
+            (EmergencyCheckpointManager, EmergencyReplicatorCheckpointManager),
         ):
-          return (checkpoint_manager.restore(step, args=Composite(state=checkpoint_args)).state, None)
+          return (
+              checkpoint_manager.restore(
+                  step, args=Composite(state=checkpoint_args)
+              ).state,
+              None,
+          )
         # Case 2: Matches if dataset type is "grain" and a specific checkpoint file exits for the iterator
         # exists within the checkpoint manager's directory for the given step.
         case (checkpoint_manager, dataset_type, data_iterator) if dataset_type == "grain" and data_iterator and (
@@ -380,9 +399,7 @@ def load_state_if_possible(
     )
     return None, restored_params
   elif load_full_state_from_path != "":
-    max_logging.log(
-        f"Loading full state from path: {load_full_state_from_path}"
-    )
+    max_logging.log(f"Loading full state from path: {load_full_state_from_path}")
     restored_state = _load_full_state_from_path(
         path=load_full_state_from_path,
         abstract_unboxed_pre_state=abstract_unboxed_pre_state,
@@ -508,7 +525,9 @@ def save_checkpoint(checkpoint_manager, step, state, config=None, data_iterator=
       )
 
   # specify chunk_byte_size to force orbax to control maximum file size in checkpoint
-  chunk_byte_size = config.checkpoint_storage_target_data_file_size_bytes if config else DEFAULT_OCDBT_TARGET_DATA_FILE_SIZE
+  chunk_byte_size = (
+      config.checkpoint_storage_target_data_file_size_bytes if config else DEFAULT_OCDBT_TARGET_DATA_FILE_SIZE
+  )
 
   checkpoint_args = ocp.args.PyTreeSave(
       item=state,

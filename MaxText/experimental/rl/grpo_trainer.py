@@ -81,10 +81,8 @@ from MaxText.experimental.rl import grpo_input_pipeline
 from MaxText.experimental.rl import grpo_utils
 from MaxText.globals import EPS
 from MaxText.metric_logger import MetricLogger
-from MaxText.train import (
-    validate_train_config,
-    get_first_step,
-)
+from MaxText.train import get_first_step
+from MaxText.train_utils import validate_train_config
 from MaxText.utils.goodput_utils import (
     GoodputEvent,
     create_goodput_recorder,
@@ -406,7 +404,9 @@ def train_step(model, config, state_mesh_shardings, state, data, dropout_rng):
       cast_params = max_utils.cast_to_bf16(cast_params)
       state = state.replace(params=cast_params)
       if config.use_grpo:
-        reference_params = jax.device_put(reference_params, max_utils.with_memory_kind(reference_params_sharding, "device"))
+        reference_params = jax.device_put(
+            reference_params, max_utils.with_memory_kind(reference_params_sharding, "device")
+        )
         reference_params = max_utils.cast_to_bf16(reference_params)
         extra_grpo_args = [reference_params]
     grad_func = jax.value_and_grad(_loss_fn, argnums=4, has_aux=True)
@@ -542,11 +542,11 @@ def setup_train_loop(
     max_logging.log("Training mesh used for the workload")
     num_inference_devices = config.inference_devices_per_replica * config.inference_replicas
     training_devices = jax.devices()[num_inference_devices:]
-    model = mt.from_pretrained(config, devices=training_devices)
+    model = mt.from_config(config, devices=training_devices)
     mesh = model.mesh
     max_logging.log("Inference mesh used for the workload")
     inference_devices = jax.devices()[:num_inference_devices]
-    inference_model = mt.from_pretrained(config_inference, devices=inference_devices)
+    inference_model = mt.from_config(config_inference, devices=inference_devices)
     inference_mesh = inference_model.mesh
     init_rng, checkpoint_manager, learning_rate_schedule, tx = train_utils.create_training_tools(config, model, mesh)
 
@@ -901,7 +901,9 @@ def main(argv: Sequence[str]) -> None:
   tf.config.set_visible_devices([], "GPU")
   os.environ["TF_CPP_MIN_LOG_LEVEL"] = "0"
   if "xla_tpu_spmd_rng_bit_generator_unsafe" not in os.environ.get("LIBTPU_INIT_ARGS", ""):
-    os.environ["LIBTPU_INIT_ARGS"] = os.environ.get("LIBTPU_INIT_ARGS", "") + " --xla_tpu_spmd_rng_bit_generator_unsafe=true"
+    os.environ["LIBTPU_INIT_ARGS"] = (
+        os.environ.get("LIBTPU_INIT_ARGS", "") + " --xla_tpu_spmd_rng_bit_generator_unsafe=true"
+    )
   configs_argv = max_utils.parse_custom_args(argv)
   config = pyconfig.initialize(configs_argv[0])
   if not config.use_grpo:
