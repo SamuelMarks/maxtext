@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """
 This script auto-generates a single API reference page.
 
@@ -5,37 +7,48 @@ It iterates over all Python files in the `MaxText` directory,
 and for each file, it adds a section to `reference.md` with
 the correct mkdocstrings identifier.
 """
-from pathlib import Path
+import ast
+import os.path
+from glob import glob
+
 import mkdocs_gen_files
 
 # The root of the package we want to document
-src_root = Path("MaxText")
-doc_file = "reference.md"
+REPO_ROOT = os.path.dirname(os.path.dirname(__file__))
+src_root = os.path.join(REPO_ROOT, "MaxText")
+docs_root = os.path.join(REPO_ROOT, "docs")
+doc_file = os.path.join(docs_root, "reference.md")
 
-with mkdocs_gen_files.open(doc_file, "w") as f:
-    # Start with the main title
-    print("# API Reference", file=f)
+orig_wd = os.getcwd()
+if orig_wd != docs_root:
+    os.chdir(REPO_ROOT)
+try:
+    with mkdocs_gen_files.open(doc_file, "wt", encoding="utf-8") as f:
+        # Start with the main title
+        f.write("# API Reference")
 
-    # Find all python files
-    for path in sorted(src_root.rglob("*.py")):
-        # Create a module identifier from the path
-        # e.g., MaxText/layers/attentions.py -> MaxText.layers.attentions
-        module_path = path.relative_to('.').with_suffix('')
-        identifier = ".".join(module_path.parts)
+        # Find all python files
+        for path in sorted(glob("**/*.py", root_dir=src_root, recursive=True)):
+            # Create a module identifier from the path
+            # e.g., MaxText/layers/attentions.py -> MaxText.layers.attentions
+            identifier = os.path.relpath(
+                os.path.join(src_root, path), REPO_ROOT
+            ).replace(os.path.sep, ".")
 
-        # This block is the crucial fix:
-        if path.name == "__init__.py":
-            # Skip empty __init__ files, as they have no content to document
-            if not path.read_text(encoding="utf-8").strip():
-                continue
-            # The identifier for an __init__.py is its parent directory (the package name)
-            identifier = ".".join(module_path.parts[:-1])
-            # Handle the top-level MaxText/__init__.py, which would otherwise be an empty string
-            if not identifier:
-                identifier = "MaxText"
+            if os.path.basename(path) == "__init__.py":
+                with open(os.path.join(src_root, path), "rt", encoding="utf-8") as f1:
+                    if not ast.parse(f1.read()).body:
+                        continue
+                # Handle the top-level MaxText/__init__.py, which would otherwise be an empty string
+                if not identifier:
+                    identifier = "MaxText"
 
-        # Add a markdown heading for each module
-        print(f"\n---\n", file=f)
-        print(f"## `{identifier}`\n", file=f)
-        # Add the mkdocstrings directive
-        print(f"::: {identifier}", file=f)
+            # Add a markdown heading for each module
+            f.write(f"\n---\n")
+            f.write(f"## `{identifier}`\n")
+            # Add the mkdocstrings directive
+            f.write(f"::: {identifier}")
+
+finally:
+    if orig_wd != docs_root:
+        os.chdir(orig_wd)
