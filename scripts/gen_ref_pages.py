@@ -31,9 +31,10 @@ try:
         for path in sorted(glob("**/*.py", root_dir=src_root, recursive=True)):
             # Create a module identifier from the path
             # e.g., MaxText/layers/attentions.py -> MaxText.layers.attentions
-            identifier = os.path.relpath(
+            rel_path = os.path.relpath(
                 os.path.join(src_root, path), REPO_ROOT
-            ).replace(os.path.sep, ".")
+            )
+            identifier = rel_path.replace(os.path.sep, ".")[:-(len(os.path.extsep) + len("py"))]
 
             if os.path.basename(path) == "__init__.py":
                 with open(os.path.join(src_root, path), "rt", encoding="utf-8") as f1:
@@ -47,7 +48,7 @@ try:
             f.write(f"\n---\n")
             f.write(f"## `{identifier}`\n")
             # Add the mkdocstrings directive
-            f.write(f"::: {identifier}")
+            f.write(f"::: {rel_path}")
 
 finally:
     if orig_wd != docs_root:
