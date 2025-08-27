@@ -28,7 +28,7 @@ try:
         f.write("# API Reference")
 
         # Find all python files
-        for path in sorted(glob("**/*.py", root_dir=src_root, recursive=True)):
+        for path in sorted(glob(os.path.join("**", "*.py"), root_dir=src_root, recursive=True)):
             # Create a module identifier from the path
             # e.g., MaxText/layers/attentions.py -> MaxText.layers.attentions
             rel_path = os.path.relpath(
@@ -45,10 +45,11 @@ try:
                     identifier = "MaxText"
 
             # Add a markdown heading for each module
-            f.write(f"\n---\n")
-            f.write(f"## `{identifier}`\n")
+            f.write("\n---\n")
+            f.write(f"## `{rel_path}`\n")
             # Add the mkdocstrings directive
-            f.write(f"::: {rel_path}")
+            f.write(f"::: {identifier}")
+        f.write("\n")
 
 finally:
     if orig_wd != docs_root:
