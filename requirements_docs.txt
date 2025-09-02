@@ -4,10 +4,3 @@ myst-nb
 myst-parser[linkify]
 sphinx-book-theme
 sphinx-design
-
-# mkdocs-related requirements.
-mkdocs-gen-files
-mkdocs-literate-nav
-mkdocs-material
-mkdocs-section-index
-mkdocstrings-python

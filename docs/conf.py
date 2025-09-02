@@ -18,6 +18,11 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+# -- Path setup --------------------------------------------------------------
+import os
+import sys
+sys.path.insert(0, os.path.abspath('../src'))
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
@@ -31,10 +36,14 @@ author = "MaxText developers"
 extensions = [
     "myst_nb",
     "sphinx_design",
+    "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.viewcode",
 ]
 
 templates_path = ["_templates"]
-source_suffix = [".rst", ".ipynb", ".md"]
+source_suffix = [".ipynb", ".md"]
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
@@ -52,9 +61,14 @@ myst_enable_extensions = [
 ]
 myst_linkify_fuzzy_links = False
 
+# -- Options for autodoc ----------------------------------------------------
+autodoc_member_order = "bysource"
+autodoc_typehints = "description"
+autosummary_generate = True
+
 # Remove specific documents from ToC
 exclude_patterns = [
-    "guides/run_maxtext_via_multihost_job.md",
-    "guides/run_maxtext_via_multihost_runner.md",
-    "guides/llm_calculator.ipynb",
+    os.path.join("guides", "run_maxtext_via_multihost_job.md"),
+    os.path.join("guides", "run_maxtext_via_multihost_runner.md"),
+    os.path.join("guides", "llm_calculator.ipynb"),
 ]
