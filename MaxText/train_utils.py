@@ -15,96 +15,18 @@
 # pylint: disable=bare-except, consider-using-generator
 """ Utils that are only interesting for training in MaxText. """
 
-from collections.abc import Sequence
 import os
-from typing import overload
-
-from flax import nnx
-import flax.linen as nn
 import jax
-from jax.sharding import Mesh
 from MaxText import checkpointing
 from MaxText import max_logging
 from MaxText import max_utils
 from MaxText import maxtext_utils
 from MaxText import optimizers
-from MaxText import pyconfig
-from MaxText.layers import quantizations
-from MaxText.common_types import MODEL_MODE_TRAIN
 from MaxText.dpo_utils import _merge_dpo_state
 from MaxText.input_pipeline.input_pipeline_interface import create_data_iterator
-from MaxText.layers import models
 from MaxText.utils.goodput_utils import GoodputEvent
 from MaxText.utils.goodput_utils import maybe_record_goodput
-
-
-@overload
-def from_config(
-    config: pyconfig.HyperParameters,
-    devices: Sequence[jax.Device] | None = None,
-    *,
-    model_mode: str = MODEL_MODE_TRAIN,
-) -> nn.Module: ...
-@overload
-def from_config(
-    config: pyconfig.HyperParameters,
-    devices: Sequence[jax.Device] | None = None,
-    *,
-    model_mode: str = MODEL_MODE_TRAIN,
-    rngs: nnx.Rngs,
-) -> models.Transformer: ...
-def from_config(
-    config: pyconfig.HyperParameters,
-    devices: Sequence[jax.Device] | None = None,
-    *,
-    model_mode: str = MODEL_MODE_TRAIN,
-    rngs: nnx.Rngs | None = None,
-) -> nn.Module | models.Transformer:
-  """Load a pretrained MaxText model from checkpoint.
-
-  This function loads a model from a checkpoint.
-
-  Args:
-      config: Config object.
-      devices: Sequence of devices to use for the model. If None, use all
-        available devices.
-
-  Returns:
-      Transformer: The loaded model instance (only the model)
-
-  Example:
-      model = from_config(config)
-  """
-  devices_array = maxtext_utils.create_device_mesh(config, devices)
-  mesh = Mesh(devices_array, config.mesh_axes)
-  model = create_model(config, mesh, model_mode=model_mode, rngs=rngs)
-
-  # Return only the model
-  return model
-
-
-def get_transformer_model(config, mesh, quant, model_mode: str = MODEL_MODE_TRAIN, rngs: nnx.Rngs | None = None):
-  """Returns the transformer model based on the configuration."""
-  if config.model_fsdp_ag_once:
-    if rngs is not None:
-      raise NotImplementedError
-    else:
-      return models.ZeroOneTransformer(config, mesh, quant=quant, model_mode=model_mode)
-  else:
-    if rngs is not None:
-      return models.Transformer(config, mesh, quant=quant, rngs=rngs, model_mode=model_mode)
-    else:
-      return models.transformer_as_linen(config, mesh, quant=quant, model_mode=model_mode)
-
-
-def create_model(config, mesh, model_mode: str = MODEL_MODE_TRAIN, rngs: nnx.Rngs | None = None):
-  """Instantiates and returns the model object, sharded across the mesh."""
-  # Model definition
-  quant = quantizations.configure_quantization(config)
-  model = get_transformer_model(config, mesh, quant, model_mode=model_mode, rngs=rngs)
-  model = quantizations.maybe_quantize_model(model, config)
-  return model
-
+from MaxText import model_creation_utils
 
 def create_training_tools(config, model, mesh):
   """Creates the init_rng, optimizer, learning rate schedule, and checkpoint manager."""
@@ -112,30 +34,29 @@ def create_training_tools(config, model, mesh):
   learning_rate_schedule = maxtext_utils.create_learning_rate_schedule(config)
   tx = optimizers.get_optimizer(config, learning_rate_schedule)
   logger = checkpointing.setup_checkpoint_logger(config)
-  if config.enable_emergency_checkpoint:
-    if config.use_replicator_service:
-      checkpoint_manager = (
-          checkpointing.create_orbax_emergency_replicator_checkpoint_manager(
-              config.local_checkpoint_directory,
-              config.local_checkpoint_period,
-              mesh,
-          )
-      )
-    else:
-      abstract_state, _, _ = maxtext_utils.get_abstract_state(
-          model, tx, config, init_rng, mesh, is_training=True
-      )
-      checkpoint_manager = (
-          checkpointing.create_orbax_emergency_checkpoint_manager(
-              config.local_checkpoint_directory,
-              config.checkpoint_dir,
-              mesh,
-              abstract_state,
-              config.local_checkpoint_period,
-              config.checkpoint_period,
-              logger,
-          )
-      )
+  if config.enable_multi_tier_checkpointing:
+    checkpoint_manager = (
+        checkpointing.create_orbax_emergency_replicator_checkpoint_manager(
+            config.local_checkpoint_directory,
+            config.local_checkpoint_period,
+            mesh,
+        )
+    )
+  elif config.enable_emergency_checkpoint:
+    abstract_state, _, _ = maxtext_utils.get_abstract_state(
+        model, tx, config, init_rng, mesh, is_training=True
+    )
+    checkpoint_manager = (
+        checkpointing.create_orbax_emergency_checkpoint_manager(
+            config.local_checkpoint_directory,
+            config.checkpoint_dir,
+            mesh,
+            abstract_state,
+            config.local_checkpoint_period,
+            config.checkpoint_period,
+            logger,
+        )
+    )
   else:
     # TODO(b/368121306): Remove this once zarr3 support is plumbed on the backend
     use_ocdbt = config.checkpoint_storage_use_ocdbt
@@ -263,7 +184,7 @@ def setup_train_loop(config, recorder, devices=None):
   """
 
   with maybe_record_goodput(recorder, GoodputEvent.TPU_INIT):
-    model = from_config(config, devices)
+    model = model_creation_utils.from_config(config, devices)
     mesh = model.mesh
     init_rng, checkpoint_manager, learning_rate_schedule, tx = (
         create_training_tools(config, model, mesh)
