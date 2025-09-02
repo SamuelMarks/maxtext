@@ -43,7 +43,7 @@ extensions = [
 ]
 
 templates_path = ["_templates"]
-source_suffix = [".ipynb", ".md"]
+source_suffix = [".rst", ".ipynb", ".md"]
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
@@ -72,3 +72,36 @@ exclude_patterns = [
     os.path.join("guides", "run_maxtext_via_multihost_runner.md"),
     os.path.join("guides", "llm_calculator.ipynb"),
 ]
+
+
+# -- Autogenerate API documentation ------------------------------------------
+# This function automatically runs sphinx-apidoc to generate API documentation
+# from the docstrings in the source code.
+def run_apidoc(_):
+    from sphinx.ext import apidoc
+    import os
+    # The path to your Python package
+    REPO_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+    pkg_path = os.path.join(REPO_ROOT, 'src', 'MaxText')
+    # The path where the generated RST files will be stored
+    output_path = os.path.join(REPO_ROOT, 'docs', 'reference', 'api_generated')
+
+    # sphinx-apidoc options
+    # --module-first: Put module documentation before submodule list
+    # --force: Overwrite existing files
+    # --no-toc: Don't create a table of contents file (modules.rst)
+    # --separate: Create a separate file for each module
+    options = [
+        '--module-first',
+        '--force',
+        '--separate',
+        '--output-dir', output_path,
+        pkg_path,
+        os.path.join('*', 'tests', '*'),
+    ]
+    apidoc.main(options)
+
+
+# Connect the apidoc generation to the Sphinx build process
+def setup(app):
+    app.connect('builder-inited', run_apidoc)
