@@ -19,9 +19,12 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 # -- Path setup --------------------------------------------------------------
-import os
+import os.path
 import sys
-sys.path.insert(0, os.path.abspath('../src'))
+
+REPO_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+
+sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -78,30 +81,30 @@ exclude_patterns = [
 # This function automatically runs sphinx-apidoc to generate API documentation
 # from the docstrings in the source code.
 def run_apidoc(_):
-    from sphinx.ext import apidoc
-    import os
-    # The path to your Python package
-    REPO_ROOT = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-    pkg_path = os.path.join(REPO_ROOT, 'src', 'MaxText')
-    # The path where the generated RST files will be stored
-    output_path = os.path.join(REPO_ROOT, 'docs', 'reference', 'api_generated')
+  from sphinx.ext import apidoc
 
-    # sphinx-apidoc options
-    # --module-first: Put module documentation before submodule list
-    # --force: Overwrite existing files
-    # --no-toc: Don't create a table of contents file (modules.rst)
-    # --separate: Create a separate file for each module
-    options = [
-        '--module-first',
-        '--force',
-        '--separate',
-        '--output-dir', output_path,
-        pkg_path,
-        os.path.join('*', 'tests', '*'),
-    ]
-    apidoc.main(options)
+  pkg_path = os.path.join(REPO_ROOT, "src", "MaxText")
+  # The path where the generated RST files will be stored
+  output_path = os.path.join(REPO_ROOT, "docs", "reference", "api_generated")
+
+  # sphinx-apidoc options
+  # --module-first: Put module documentation before submodule list
+  # --force: Overwrite existing files
+  # --no-toc: Don't create a table of contents file (modules.rst)
+  # --separate: Create a separate file for each module
+  options = [
+      "--module-first",
+      "--force",
+      "--separate",
+      "--output-dir",
+      output_path,
+      pkg_path,
+      os.path.join("*", "tests", "*"),
+      os.path.join("*", "MaxText", "experimental", "*"),
+  ]
+  apidoc.main(options)
 
 
 # Connect the apidoc generation to the Sphinx build process
 def setup(app):
-    app.connect('builder-inited', run_apidoc)
+  app.connect("builder-inited", run_apidoc)
