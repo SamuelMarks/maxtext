@@ -46,24 +46,29 @@ export DEBIAN_FRONTEND=noninteractive
 PYTHON_VERSION=$(python3 --version)
 PYTHON_MAJOR_MINOR_VERSION="${PYTHON_VERSION%.*}"
 PYTHON_MAJOR_MINOR_VERSION="${PYTHON_MAJOR_MINOR_VERSION##* }"
-if [ "$(expr ${PYTHON_MAJOR_MINOR_VERSION} \< '3.12')" = 1 ]
+if [ "$(expr "${PYTHON_MAJOR_MINOR_VERSION}" \< '3.12')" = 1 ]; then
     printf '\n\e[31mERROR: Python >= 3.12 required, you have %s\e[0m' "${CURRENT_VERSION}"
     exit 2
 fi
 
-priv apt install -y numactl lsb-release gnupg curl net-tools iproute2 procps lsof git ethtool
-export GCSFUSE_REPO=gcsfuse-`lsb_release -c -s`
-printf 'deb https://packages.cloud.google.com/apt %s main\n' "$GCSFUSE_REPO" | priv tee /etc/apt/sources.list.d/gcsfuse.list >/dev/null
-curl --proto '=https' --tlsv1.2 -sSf https://packages.cloud.google.com/apt/doc/apt-key.gpg | priv apt-key add -
+priv apt install -y -- numactl lsb-release gnupg curl net-tools iproute2 procps lsof git ethtool
+GCSFUSE_REPO='gcsfuse-'"$(lsb_release -c -s)"
+export GCSFUSE_REPO
+printf 'deb https://packages.cloud.google.com/apt %s main\n' "$GCSFUSE_REPO" | priv tee '/etc/apt/sources.list.d/gcsfuse.list' >/dev/null
+curl --proto '=https' --tlsv1.2 -sSf 'https://packages.cloud.google.com/apt/doc/apt-key.gpg' | priv apt-key add -
 priv apt update -y && priv apt install -y gcsfuse
 rm -rf /var/lib/apt/lists/*
 
+python3 -m pip install -U pip
 python3 -m pip install -U setuptools wheel uv
 
 # Set environment variables
-for ARGUMENT in "$@"; do
-    IFS='=' read -r KEY VALUE <<< "$ARGUMENT"
-    export "$KEY"="$VALUE"
+for ARGUMENT do
+    KEY="${ARGUMENT%%=*}"
+    VALUE="${ARGUMENT#*=}"
+    if [ "$KEY" != "$ARGUMENT" ] && [ -n "$KEY" ]; then
+        export "$KEY=$VALUE"
+    fi
 done
 
 export DEVICE="${DEVICE:-tpu}"
@@ -76,62 +81,63 @@ if [ "$LIBTPU_GCS_PATH" = 'NONE' ]; then
   unset LIBTPU_GCS_PATH
 fi
 
-if [ -n $JAX_VERSION ] && [ "$MODE" = 'stable' ] || [ "${MODE:-}" = 'nightly' ] && [ "$DEVICE" = 'gpu' ]; then
-     echo -e "\n\nError: You can only specify a JAX_VERSION with stable mode (plus nightly mode on GPU).\n\n"
+if [ -n "$JAX_VERSION" ] && [ "$MODE" = 'stable' ] || [ "${MODE:-}" = 'nightly' ] && [ "$DEVICE" = 'gpu' ]; then
+     printf '\n\nError: You can only specify a JAX_VERSION with stable mode (plus nightly mode on GPU).\n\n'
      exit 1
 fi
 
-if [[ $DEVICE == "tpu" ]]; then
-    libtpu_path="$HOME/custom_libtpu/libtpu.so"
-    if [[ "$MODE" == "libtpu-only" ]]; then
+if [ "$DEVICE" = "tpu" ]; then
+    libtpu_path="$HOME"'/custom_libtpu/libtpu.so'
+    if [ "$MODE" = "libtpu-only" ]; then
         # Only update custom libtpu.
-        if [[ -n "$LIBTPU_GCS_PATH" ]]; then
+        if [ -n "$LIBTPU_GCS_PATH" ]; then
             # Install custom libtpu
-            echo "Installing libtpu.so from $LIBTPU_GCS_PATH to $libtpu_path"
+            printf 'Installing "libtpu.so" from "%s" to "%s"\n' "$LIBTPU_GCS_PATH" "$libtpu_path"
             # Install required dependency
-            python3 -m uv pip install -U crcmod
+            python3 -m uv pip install -U -- crcmod
             # Copy libtpu.so from GCS path
-            gsutil cp "$LIBTPU_GCS_PATH" "$libtpu_path"
+            gsutil cp -- "$LIBTPU_GCS_PATH" "$libtpu_path"
             exit 0
         else
-            echo -e "\n\nError: You must provide a custom libtpu for libtpu-only mode.\n\n"
+            printf '\n\nError: You must provide a custom libtpu for libtpu-only mode.\n\n'
             exit 1
         fi
     fi
 fi
 
-# Save the script folder path of maxtext
-run_name_folder_path=$(pwd)
+previous_wd="${PWD:-$(pwd)}"
 
 # Install dependencies from requirements.txt
-cd "$run_name_folder_path" && python3 -m uv pip install --upgrade pip
-if [[ "$MODE" == "nightly" ]]; then
-    echo "Nightly mode: Installing requirements.txt, stripping commit pins from git+ repos."
-    cp requirements.txt requirements.txt.nightly-temp
+cd -- "$DIR"
+trap 'cd -- "${previous_wd}"' EXIT HUP INT QUIT TERM
+
+python3 -m uv pip install --upgrade pip
+if [ "$MODE" = 'nightly' ]; then
+    printf 'Nightly mode: installing requirements.txt, stripping commit pins from git+ repos.\n'
+    temp_requirements="$(mktemp -t maxtext_requirements)"
+    trap 'cd -- "${temp_requirements}"' EXIT HUP INT QUIT TERM
+    cp -- 'requirements.txt' "$temp_requirements"
     # Create a temp file, strip commit pins from git+ repos in requirements.txt
     # Remove/update this section based on the pinned github repo commit in requirements.txt
     sed -i -E \
       -e 's|^mlperf-logging @ https?://github.com/mlcommons/logging/archive/.*\.zip$|mlperf-logging@git+https://github.com/mlperf/logging.git|' \
       -e 's|^([^ ]*) @ https?://github.com/([^/]*\/[^/]*)/archive/.*\.zip$|\1@git+https://github.com/\2.git|' \
-      requirements.txt.nightly-temp
+      -- "$temp_requirements"
 
-    echo "--- Installing modified nightly requirements: ---"
-    cat requirements.txt.nightly-temp
-    echo "-------------------------------------------------"
-    
-    python3 -m uv pip install --no-cache-dir -U -r requirements.txt.nightly-temp
-    rm requirements.txt.nightly-temp
+    printf '### Installing modified nightly requirements: ###\n'
+    cat -- "$temp_requirements"
+    printf '#################################################\n'
+
+    python3 -m uv pip install --no-cache-dir -U -r -- "$temp_requirements"
+    rm -- "$temp_requirements"
 else
     # stable or stable_stack mode: Install with pinned commits
-    echo "Installing requirements.txt with pinned commits."
-    python3 -m uv pip install --no-cache-dir -U -r requirements.txt
+    printf 'Installing requirements.txt with pinned commits.\n'
+    python3 -m uv pip install --no-cache-dir -U -r -- 'requirements.txt'
 fi
 
-# Install maxtext package
-if [ -f 'pyproject.toml' ]; then
-  python3 -m uv pip install -e . --no-deps --resolution=lowest
-  install_maxtext_github_deps
-fi
+python3 -m uv pip install -e . --no-deps --resolution=lowest
+install_maxtext_github_deps
 
 # Uninstall existing jax, jaxlib and  libtpu-nightly
 python3 -m uv pip show jax && python3 -m uv pip uninstall jax
@@ -140,90 +146,90 @@ python3 -m uv pip show libtpu-nightly && python3 -m uv pip uninstall libtpu-nigh
 
 # Delete custom libtpu if it exists
 if [ -e "$libtpu_path" ]; then
-    rm "$libtpu_path"
+    rm -- "$libtpu_path"
 fi
 
-if [[ "$MODE" == "stable" || ! -v MODE ]]; then
+if [ "$MODE" = 'stable' ]; then
 # Stable mode
-    if [[ $DEVICE == "tpu" ]]; then
-        echo "Installing stable jax, jaxlib for tpu"
-        if [[ -n "$JAX_VERSION" ]]; then
+    if [ "$DEVICE" = 'tpu' ]; then
+        printf 'Installing stable jax, jaxlib for tpu\n'
+        if [ -n "$JAX_VERSION" ]; then
             echo "Installing stable jax, jaxlib, libtpu version ${JAX_VERSION}"
-            python3 -m uv pip install jax[tpu]==${JAX_VERSION} -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+            python3 -m uv pip install jax[tpu]=="${JAX_VERSION}" -f 'https://storage.googleapis.com/jax-releases/libtpu_releases.html'
         else
             echo "Installing stable jax, jaxlib, libtpu for tpu"
-            python3 -m uv pip install 'jax[tpu]>0.4' -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+            python3 -m uv pip install 'jax[tpu]>0.4' -f 'https://storage.googleapis.com/jax-releases/libtpu_releases.html'
         fi
 
         # TODO: Once tunix has support for GPUs, move it from here to requirements.txt
-        echo "Installing tunix for stable TPU environment"
-        python3 -m uv pip install 'google-tunix @ https://github.com/google/tunix/archive/e03f154edd2abfddd6b9babb72a3d0d3c4d81bb2.zip'
+        printf 'Installing tunix for stable TPU environment'
+        python3 -m uv pip install -- 'google-tunix @ https://github.com/google/tunix/archive/e03f154.zip'
 
-        if [[ -n "$LIBTPU_GCS_PATH" ]]; then
+        if [ -n "$LIBTPU_GCS_PATH" ]; then
             # Install custom libtpu
-            echo "Installing libtpu.so from $LIBTPU_GCS_PATH to $libtpu_path"
+            printf 'Installing libtpu.so from "%s" to "%s"\n' "$LIBTPU_GCS_PATH" "$libtpu_path"
             # Install required dependency
-            python3 -m uv pip install -U crcmod
+            python3 -m uv pip install -U 'crcmod'
             # Copy libtpu.so from GCS path
-            gsutil cp "$LIBTPU_GCS_PATH" "$libtpu_path"
+            gsutil cp -- "$LIBTPU_GCS_PATH" "$libtpu_path"
         fi
-    elif [[ $DEVICE == "gpu" ]]; then
-        echo "Installing stable jax, jaxlib for NVIDIA gpu"
-        if [[ -n "$JAX_VERSION" ]]; then
-            echo "Installing stable jax, jaxlib ${JAX_VERSION}"
-            python3 -m uv pip install -U "jax[cuda12]==${JAX_VERSION}"
+    elif [ "$DEVICE" = "gpu" ]; then
+        printf 'Installing stable jax, jaxlib for NVIDIA gpu\n'
+        if [ -n "$JAX_VERSION" ]; then
+            printf 'Installing stable jax, jaxlib %s\n' "${JAX_VERSION}"
+            python3 -m uv pip install -U -- 'jax[cuda12]=='"${JAX_VERSION}"
         else
-            echo "Installing stable jax, jaxlib, libtpu for NVIDIA gpu"
-            python3 -m uv pip install "jax[cuda12]"
+            printf 'Installing stable jax, jaxlib, libtpu for NVIDIA gpu\n'
+            python3 -m uv pip install -- 'jax[cuda12]'
         fi
         export NVTE_FRAMEWORK=jax
-        if [[ -n "$JAX_VERSION" && "$JAX_VERSION" != "0.7.0" ]]; then
-            python3 -m uv pip install transformer-engine[jax]
+        if [ -n "$JAX_VERSION" ] && [ "$JAX_VERSION" != '0.7.0' ]; then
+            python3 -m uv pip install -- 'transformer-engine[jax]'
         else
-            python3 -m uv pip install git+https://github.com/NVIDIA/TransformerEngine.git@9d031f
+            python3 -m uv pip install -- 'git+https://github.com/NVIDIA/TransformerEngine.git@9d031f'
         fi
     fi
-elif [[ $MODE == "nightly" ]]; then
+elif [ "$MODE" = 'nightly' ]; then
 # Nightly mode
-    if [[ $DEVICE == "gpu" ]]; then
+    if [ "$DEVICE" = 'gpu' ]; then
         # Install jax-nightly
-        if [[ -n "$JAX_VERSION" ]]; then
-            echo "Installing jax-nightly, jaxlib-nightly ${JAX_VERSION}"
-            python3 -m uv pip install -U --pre jax==${JAX_VERSION} jaxlib==${JAX_VERSION} jax-cuda12-plugin[with-cuda] jax-cuda12-pjrt -i https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/
+        if [ -n "$JAX_VERSION" ]; then
+            printf 'Installing jax-nightly, jaxlib-nightly %s\n' "${JAX_VERSION}"
+            python3 -m uv pip install -U --pre 'jax=='"${JAX_VERSION}" 'jaxlib=='"${JAX_VERSION}" 'jax-cuda12-plugin[with-cuda]' 'jax-cuda12-pjrt' -i 'https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/'
         else
-            echo "Installing latest jax-nightly, jaxlib-nightly"
-            python3 -m uv pip install -U --pre jax jaxlib jax-cuda12-plugin[with-cuda] jax-cuda12-pjrt -i https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/
+            printf 'Installing latest jax-nightly, jaxlib-nightly\n'
+            python3 -m uv pip install -U --pre 'jax' 'jaxlib' 'jax-cuda12-plugin[with-cuda]' 'jax-cuda12-pjrt' -i 'https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/'
         fi
         # Install Transformer Engine
-        export NVTE_FRAMEWORK=jax
-        python3 -m uv pip install https://github.com/NVIDIA/TransformerEngine/archive/9d031f.zip
-    elif [[ $DEVICE == "tpu" ]]; then
-        echo "Installing jax-nightly, jaxlib-nightly"
+        export NVTE_FRAMEWORK='jax'
+        python3 -m uv pip install -- 'https://github.com/NVIDIA/TransformerEngine/archive/9d031f.zip'
+    elif [ "$DEVICE" = 'tpu' ]; then
+        printf 'Installing jax-nightly, jaxlib-nightly\n'
         # Install jax-nightly
-        python3 -m uv pip install --pre -U jax -i https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/
+        python3 -m uv pip install --pre -U 'jax' -i 'https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/'
         # Install jaxlib-nightly
-        python3 -m uv pip install --pre -U jaxlib -i https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/
+        python3 -m uv pip install --pre -U 'jaxlib' -i 'https://us-python.pkg.dev/ml-oss-artifacts-published/jax/simple/'
 
-        if [[ -n "$LIBTPU_GCS_PATH" ]]; then
+        if [ -n "$LIBTPU_GCS_PATH" ]; then
             # Install custom libtpu
-            echo "Installing libtpu.so from $LIBTPU_GCS_PATH to $libtpu_path"
+            printf 'Installing libtpu.so from "%s" to "%s"\n' "$LIBTPU_GCS_PATH" "$libtpu_path"
             # Install required dependency
-            python3 -m uv pip install -U crcmod
+            python3 -m uv pip install -U 'crcmod'
             # Copy libtpu.so from GCS path
-            gsutil cp "$LIBTPU_GCS_PATH" "$libtpu_path"
+            gsutil cp -- "$LIBTPU_GCS_PATH" "$libtpu_path"
         else
             # Install libtpu-nightly
-            echo "Installing libtpu-nightly"
-            python3 -m uv pip install -U --pre libtpu -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+            printf 'Installing libtpu-nightly\n'
+            python3 -m uv pip install -U --pre 'libtpu' -f 'https://storage.googleapis.com/jax-releases/libtpu_releases.html'
         fi
-        echo "Installing nightly tensorboard plugin profile"
-        python3 -m uv pip install tbp-nightly --upgrade
+        printf 'Installing nightly tensorboard plugin profile\n'
+        python3 -m uv pip install --upgrade -- 'tbp-nightly'
         # Installing tunix
-        python3 -m uv pip install 'git+https://github.com/google/tunix.git'
+        python3 -m uv pip install -- 'git+https://github.com/google/tunix.git'
     fi
-    echo "Installing nightly tensorboard plugin profile"
-    python3 -m uv pip install tbp-nightly --upgrade
+    printf 'Installing nightly tensorboard plugin profile\n'
+    python3 -m uv pip install --upgrade -- tbp-nightly
 else
-    echo -e "\n\nError: You can only set MODE to [stable,nightly,libtpu-only].\n\n"
+    printf '\n\nError: You can only set MODE to [stable,nightly,libtpu-only].\n\n'
     exit 1
 fi
