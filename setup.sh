@@ -58,7 +58,7 @@ if ! python3 -c 'import sys; assert sys.version_info >= (3, 12)' 2>/dev/null; th
         read -p "Please enter a name for your new virtual environment (default: maxtext_venv): " venv_name
         # Use a default name if the user provides no input
         if [ -z "$venv_name" ]; then
-            venv_name="maxtext_venv"
+            venv_name="${MAXTEXT_VENV:-maxtext_venv}"
             echo "No name provided. Using default name: '$venv_name'"
         fi
         echo "Creating virtual environment '$venv_name' with Python 3.12..."
@@ -74,9 +74,20 @@ if ! python3 -c 'import sys; assert sys.version_info >= (3, 12)' 2>/dev/null; th
     fi
     # Exit the script since the initial Python check failed
     exit 1
+elif [ -z "$VIRTUAL_ENV" ]; then
+  if [ -z "$venv_name" ]; then
+      venv_name="${MAXTEXT_VENV:-maxtext_venv}"
+      echo "No name provided. Using default name: '$venv_name'"
+  fi
+  if command uv >/dev/null 2>&1; then
+    uv venv "${venv_name}"
+  else
+    python3 -m venv "${venv_name}"
+  fi
+  . "${venv_name}"/bin/activate
 fi
-echo "Python version check passed. Continuing with script."
-echo "--------------------------------------------------"
+echo "Python version check passed and venv enabled. Continuing with script."
+echo "---------------------------------------------------------------------"
 
 apt-get update && apt-get install -y sudo
 (sudo bash || bash) <<'EOF'
@@ -134,6 +145,28 @@ if [[ $DEVICE == "tpu" ]]; then
     fi
 fi
 
+EXTRA_PIP_INSTALL_ARGS=()
+if [ "$MODE" != 'stable' ]; then
+  EXTRA_PIP_INSTALL_ARGS+=(--no-deps)
+fi
+
+if [ -f 'requirements-pyproj.txt' ]; then
+  python3 -m uv pip install -r requirements-pyproj.txt
+elif [ -f "${MAXTEXT_REPO_ROOT}"'/requirements-pyproj.txt' ]; then
+  python3 -m uv pip install -r "${MAXTEXT_REPO_ROOT}"'/requirements-pyproj.txt'
+else
+  >&2 printf 'Could not find requirements-pyproj.txt, looked in ("%s", "%s")\n' \
+      "${PWD:-$(pwd)}" \
+      "${MAXTEXT_REPO_ROOT}"
+  exit 2
+fi
+
+# Install maxtext package
+if [ -f 'pyproject.toml' ]; then
+  python3 -m uv pip install -e . "${EXTRA_PIP_INSTALL_ARGS[@]}" --resolution=lowest
+  install_maxtext_github_deps
+fi
+
 # Save the script folder path of maxtext
 run_name_folder_path=$(pwd)
 
@@ -152,19 +185,9 @@ if [[ "$MODE" == "nightly" ]]; then
     echo "--- Installing modified nightly requirements: ---"
     cat requirements.txt.nightly-temp
     echo "-------------------------------------------------"
-    
+
     python3 -m uv pip install --no-cache-dir -U -r requirements.txt.nightly-temp
     rm requirements.txt.nightly-temp
-else
-    # stable or stable_stack mode: Install with pinned commits
-    echo "Installing requirements.txt with pinned commits."
-    python3 -m uv pip install --no-cache-dir -U -r requirements.txt
-fi
-
-# Install maxtext package
-if [ -f 'pyproject.toml' ]; then
-  python3 -m uv pip install -e . --no-deps --resolution=lowest
-  install_maxtext_github_deps
 fi
 
 # Uninstall existing jax, jaxlib and  libtpu-nightly
@@ -180,8 +203,6 @@ fi
 if [[ "$MODE" == "stable" || ! -v MODE ]]; then
 # Stable mode
     if [[ $DEVICE == "tpu" ]]; then
-        
-
         # TODO: Once tunix has support for GPUs, move it from here to requirements.txt
         echo "Installing google-tunix for stable TPU environment"
         python3 -m uv pip install 'google-tunix>=0.1.0'
