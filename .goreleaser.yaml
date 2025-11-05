@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+version: 2
+
+project_name: maxtext
+
+builds:
+  - builder: uv
+    buildmode: wheel
+
+#builds:
+#  - id: wheel
+#    builder: poetry
+#    buildmode: wheel
+#  - id: sdist
+#    builder: poetry
+#    buildmode: sdist
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  footer: >-
+
+    ---
+
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).
