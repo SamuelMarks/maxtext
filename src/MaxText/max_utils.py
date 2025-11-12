@@ -286,23 +286,24 @@ def _retrieve_jax_init_info(raw_keys):
   )
   return "", ""
 
+
 # @deprecated
-def get_num_slices(raw_keys):  
-  """Calculate num_slices based on number of devices."""  
+def get_num_slices(raw_keys):
+  """Calculate num_slices based on number of devices."""
   if raw_keys.get("num_slices", -1) != -1:
     max_logging.log(f"Using num_slices={raw_keys['num_slices']} per user request.")
     return raw_keys["num_slices"]
-  if raw_keys["hardware"] == "cpu":  
-    max_logging.log(" Setting num_slices=1 for CPU hardware type")  
-    return 1  
-  if int(raw_keys["compile_topology_num_slices"]) > 0:  
-    return raw_keys["compile_topology_num_slices"]  
-  else:  
-    devices = jax.devices()  
-    try:  
-      return 1 + max(d.slice_index for d in devices)  
-    except (ValueError, AttributeError):  
-      return 1  
+  if raw_keys["hardware"] == "cpu":
+    max_logging.log(" Setting num_slices=1 for CPU hardware type")
+    return 1
+  if int(raw_keys["compile_topology_num_slices"]) > 0:
+    return raw_keys["compile_topology_num_slices"]
+  else:
+    devices = jax.devices()
+    try:
+      return 1 + max(d.slice_index for d in devices)
+    except (ValueError, AttributeError):
+      return 1
 
 
 def is_cpu_backend(raw_keys):
